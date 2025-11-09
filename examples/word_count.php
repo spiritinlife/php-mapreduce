@@ -21,7 +21,7 @@ $startTime = microtime(true);
 
 $wordCounts = (new MapReduceBuilder())
     ->input($documents)
-    ->map(function ($docId, $text) {
+    ->map(function ($text) {
         // Split text into words and emit each with count of 1
         $words = str_word_count(strtolower($text), 1);
         foreach ($words as $word) {

@@ -50,7 +50,7 @@ class MapperTest extends TestCase
 
         $mapOutputFiles = $mapper->map(
             $input,
-            function ($docId, $text) {
+            function ($text) {
                 foreach (explode(' ', $text) as $word) {
                     yield [$word, 1];
                 }
@@ -77,7 +77,7 @@ class MapperTest extends TestCase
 
         $mapOutputFiles = $mapper->map(
             [],
-            fn($k, $v) => yield [$k, $v],
+            fn($v) => yield [$v, $v],
             2
         );
 
@@ -95,7 +95,7 @@ class MapperTest extends TestCase
 
         $mapOutputFiles = $mapper->map(
             $input,
-            fn($k, $v) => yield [$k, $v],
+            fn($v) => yield [$v, $v],
             3 // 3 partitions
         );
 
@@ -122,7 +122,7 @@ class MapperTest extends TestCase
 
         $mapOutputFiles = $mapper->map(
             $input,
-            fn($k, $v) => yield [$k, $v],
+            fn($v) => yield [$v, $v],
             3
         );
 
@@ -160,7 +160,7 @@ class MapperTest extends TestCase
 
         $mapper->map(
             ['a' => 1],
-            fn($k, $v) => yield [$k, $v],
+            fn($v) => yield [$v, $v],
             2
         );
     }
@@ -174,8 +174,8 @@ class MapperTest extends TestCase
 
         $mapper->map(
             ['a' => 1],
-            function ($k, $v) {
-                yield [$k, $v, 'extra']; // Invalid: 3 elements
+            function ($v) {
+                yield [$v, $v, 'extra']; // Invalid: 3 elements
             },
             2
         );
@@ -187,9 +187,9 @@ class MapperTest extends TestCase
 
         $mapOutputFiles = $mapper->map(
             ['a' => 1],
-            function ($k, $v) {
+            function ($v) {
                 // Return array instead of yielding
-                return [[$k, $v]];
+                return [[$v, $v]];
             },
             2
         );
@@ -206,7 +206,7 @@ class MapperTest extends TestCase
 
         $mapOutputFiles = $mapper->map(
             $input,
-            function ($key, $value) {
+            function ($value) {
                 yield ['original', $value];
                 yield ['squared', $value * $value];
             },
@@ -243,7 +243,7 @@ class MapperTest extends TestCase
 
         $mapOutputFiles = $mapper->map(
             $input,
-            fn($k, $v) => yield [$v % 10, $v], // Group by mod 10
+            fn($v) => yield [$v % 10, $v], // Group by mod 10
             4
         );
 
@@ -266,7 +266,7 @@ class MapperTest extends TestCase
 
         $mapOutputFiles = $mapper->map(
             ['a' => 1, 'b' => 2],
-            fn($k, $v) => yield [10, $v],
+            fn($v) => yield [10, $v],
             2
         );
 
@@ -290,7 +290,7 @@ class MapperTest extends TestCase
 
         $mapOutputFiles = $mapper->map(
             [1, 2, 3],
-            function ($k, $v) {
+            function ($v) {
                 yield [['user' => 1, 'product' => 100], $v];
             },
             2
@@ -322,7 +322,7 @@ class MapperTest extends TestCase
 
         $mapOutputFiles = $mapper->map(
             $generator(),
-            fn($k, $v) => yield [$k, $v],
+            fn($v) => yield [$v, $v],
             2
         );
 
@@ -349,7 +349,7 @@ class MapperTest extends TestCase
             $mapper = new Mapper($readOnlyDir, 1);
             $mapper->map(
                 ['a' => 1],
-                fn($k, $v) => yield [$k, $v],
+                fn($v) => yield [$v, $v],
                 2
             );
         } finally {
@@ -366,7 +366,7 @@ class MapperTest extends TestCase
         // Normal operation should work
         $mapOutputFiles = $mapper->map(
             ['a' => 1, 'b' => 2],
-            fn($k, $v) => yield [$k, $v],
+            fn($v) => yield [$v, $v],
             2
         );
 
@@ -385,10 +385,10 @@ class MapperTest extends TestCase
 
         $mapOutputFiles = $mapper->map(
             [1 => 'a', 2 => 'b', 3 => 'c'],
-            function ($k, $v) {
+            function ($v) {
                 // Emit various scalar key types
                 yield ['string_key', $v];
-                yield [$k, $v]; // integer key
+                yield [$v, $v]; // use value as key too
                 yield [1.5, $v]; // float key
                 yield [true, $v]; // boolean key
             },

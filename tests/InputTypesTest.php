@@ -46,7 +46,7 @@ class InputTypesTest extends TestCase
     {
         $result = (new MapReduceBuilder())
             ->input(['a', 'b', 'c'])
-            ->map(fn($k, $v) => yield [$v, 1])
+            ->map(fn($v) => yield [$v, 1])
             ->reduce(fn($k, $v) => array_sum($v))
             ->execute();
 
@@ -59,12 +59,16 @@ class InputTypesTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input(new \ArrayIterator($data))
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->execute();
 
-        $this->assertEquals(10, $result['x']['value']);
-        $this->assertEquals(20, $result['y']['value']);
+        $found = [];
+        foreach ($result as $data) {
+            $found[$data['key']] = $data['value'];
+        }
+        $this->assertEquals(10, $found[10]);
+        $this->assertEquals(20, $found[20]);
     }
 
     public function testGeneratorInput(): void
@@ -77,7 +81,7 @@ class InputTypesTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($generator())
-            ->map(fn($k, $v) => yield ['sum', $v])
+            ->map(fn($v) => yield ['sum', $v])
             ->reduce(fn($k, $v) => array_sum($v))
             ->execute();
 
@@ -91,7 +95,7 @@ class InputTypesTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input(new \SplFileObject($file))
-            ->map(function ($k, $line) {
+            ->map(function ($line) {
                 $line = trim($line);
                 if (!empty($line)) {
                     yield ['count', 1];
@@ -122,7 +126,7 @@ class InputTypesTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($csvGenerator())
-            ->map(fn($k, $row) => yield [$row['name'], $row['value']])
+            ->map(fn($row) => yield [$row['name'], $row['value']])
             ->reduce(fn($k, $v) => $v[0])
             ->execute();
 
@@ -149,7 +153,7 @@ class InputTypesTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($jsonlGenerator())
-            ->map(fn($k, $row) => yield [$row['name'], $row['id']])
+            ->map(fn($row) => yield [$row['name'], $row['id']])
             ->reduce(fn($k, $v) => $v[0])
             ->execute();
 
@@ -178,7 +182,7 @@ class InputTypesTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($fileGenerator())
-            ->map(fn($k, $path) => yield ['count', 1])
+            ->map(fn($path) => yield ['count', 1])
             ->reduce(fn($k, $v) => array_sum($v))
             ->execute();
 

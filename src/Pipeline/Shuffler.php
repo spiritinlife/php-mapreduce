@@ -25,7 +25,6 @@ class Shuffler
     private string $workingDir;
     private int $chunkSize;
     private int $bufferSize;
-    private int $memoryLoadThreshold;
 
     /**
      * Create a new Shuffler
@@ -33,18 +32,15 @@ class Shuffler
      * @param string $workingDir Directory for temporary files
      * @param int $chunkSize Number of records to process in each chunk
      * @param int $bufferSize Number of records to buffer before flushing (default: 1000)
-     * @param int $memoryLoadThreshold Max file size to load entirely into memory in bytes (default: 10MB)
      */
     public function __construct(
         string $workingDir,
         int $chunkSize = 10000,
-        int $bufferSize = 1000,
-        int $memoryLoadThreshold = 10485760
+        int $bufferSize = 1000
     ) {
         $this->workingDir = $workingDir;
         $this->chunkSize = $chunkSize;
         $this->bufferSize = $bufferSize;
-        $this->memoryLoadThreshold = $memoryLoadThreshold; // 10MB default
     }
 
     /**
@@ -118,35 +114,16 @@ class Shuffler
                 continue;
             }
 
-            $fileSize = @filesize($filename);
-            if ($fileSize === false) {
-                throw new \RuntimeException("Failed to get file size: $filename");
+            // Always use buffered reading for consistency and memory safety
+            $reader = new BufferedFileReader($filename);
+            $lines = [];
+
+            while (($line = $reader->getLine()) !== null) {
+                $lines[] = $line;
             }
+            $reader->close();
 
-            // Hybrid approach: small files loaded entirely, large files use buffered reading
-            if ($fileSize <= $this->memoryLoadThreshold) {
-                // Small file: Load entirely (fast, minimal memory for typical files)
-                $contents = @file_get_contents($filename);
-                if ($contents === false) {
-                    throw new \RuntimeException("Failed to open file for reading: $filename");
-                }
-
-                $lines = explode("\n", $contents);
-                unset($contents); // Free memory immediately
-
-                $this->processLines($lines, $partition, $chunkIndex, $chunk, $recordCount, $chunkFiles);
-            } else {
-                // Large file: Use buffered reading (memory-safe)
-                $reader = new BufferedFileReader($filename);
-                $lines = [];
-
-                while (($line = $reader->getLine()) !== null) {
-                    $lines[] = $line;
-                }
-                $reader->close();
-
-                $this->processLines($lines, $partition, $chunkIndex, $chunk, $recordCount, $chunkFiles);
-            }
+            $this->processLines($lines, $partition, $chunkIndex, $chunk, $recordCount, $chunkFiles);
         }
 
         return $chunkFiles;

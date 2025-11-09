@@ -351,7 +351,7 @@ class ShufflerTest extends TestCase
 
         try {
             $this->expectException(\RuntimeException::class);
-            $this->expectExceptionMessage('Failed to open file for reading');
+            $this->expectExceptionMessage('Failed to open file for buffered reading');
 
             $shuffler->shufflePartition(0, [$inputFile]);
         } finally {

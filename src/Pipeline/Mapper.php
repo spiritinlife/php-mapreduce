@@ -64,8 +64,8 @@ class Mapper
         // Producer coroutine: push() provides backpressure - blocks until item is consumed
         // This prevents loading entire iterator into memory
         async(function () use ($input, $queue) {
-            foreach ($input as $key => $value) {
-                $queue->push([$key, $value]);
+            foreach ($input as $value) {
+                $queue->push($value);
             }
             $queue->complete();
         });
@@ -111,7 +111,7 @@ class Mapper
         $writersCreated = false;
 
         try {
-            foreach ($iterator as [$key, $value]) {
+            foreach ($iterator as $value) {
                 // Lazy initialization: only create files if this worker gets items
                 // Empty input = no files created, avoiding unnecessary I/O
                 if (!$writersCreated) {
@@ -123,7 +123,7 @@ class Mapper
                     $writersCreated = true;
                 }
 
-                $intermediateResults = $mapper($key, $value);
+                $intermediateResults = $mapper($value);
 
                 if ($intermediateResults === null) {
                     continue;

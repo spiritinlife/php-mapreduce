@@ -15,17 +15,17 @@ class IntegrationTest extends TestCase
     public function testInvertedIndexBuild(): void
     {
         $documents = [
-            1 => 'the quick brown fox jumps over the lazy dog',
-            2 => 'the lazy cat sleeps on the mat',
-            3 => 'quick brown foxes are clever animals',
+            ['id' => 1, 'text' => 'the quick brown fox jumps over the lazy dog'],
+            ['id' => 2, 'text' => 'the lazy cat sleeps on the mat'],
+            ['id' => 3, 'text' => 'quick brown foxes are clever animals'],
         ];
 
         $invertedIndex = (new MapReduceBuilder())
             ->input($documents)
-            ->map(function ($docId, $text) {
-                $words = array_unique(str_word_count(strtolower($text), 1));
+            ->map(function ($doc) {
+                $words = array_unique(str_word_count(strtolower($doc['text']), 1));
                 foreach ($words as $word) {
-                    yield [$word, $docId];
+                    yield [$word, $doc['id']];
                 }
             })
             ->reduce(function ($word, $docIds) {
@@ -66,7 +66,7 @@ class IntegrationTest extends TestCase
 
         $stats = (new MapReduceBuilder())
             ->input($logLines)
-            ->map(function ($lineNum, $line) {
+            ->map(function ($line) {
                 if (preg_match('/(\S+) .*?"(\S+) (\S+).*?" (\d+) (\d+)/', $line, $m)) {
                     $ip = $m[1];
                     $method = $m[2];
@@ -125,7 +125,7 @@ class IntegrationTest extends TestCase
 
         $joined = (new MapReduceBuilder())
             ->input($combined)
-            ->map(function ($id, $record) {
+            ->map(function ($record) {
                 if ($record['type'] === 'user') {
                     yield [$record['data']['user_id'], ['user' => $record['data']]];
                 } else {
@@ -191,7 +191,7 @@ class IntegrationTest extends TestCase
 
         $dailyStats = (new MapReduceBuilder())
             ->input($transactions)
-            ->map(function ($id, $transaction) {
+            ->map(function ($transaction) {
                 yield [$transaction['date'], $transaction['amount']];
             })
             ->reduce(function ($date, $amounts) {
@@ -229,7 +229,7 @@ class IntegrationTest extends TestCase
 
         $wordCounts = (new MapReduceBuilder())
             ->input(['doc' => $text])
-            ->map(function ($docId, $text) {
+            ->map(function ($text) {
                 foreach (str_word_count(strtolower($text), 1) as $word) {
                     yield [$word, 1];
                 }
@@ -263,7 +263,7 @@ class IntegrationTest extends TestCase
 
         $cooccurrences = (new MapReduceBuilder())
             ->input($users)
-            ->map(function ($userId, $items) {
+            ->map(function ($items) {
                 // Emit all pairs of items this user interacted with
                 $count = count($items);
                 for ($i = 0; $i < $count; $i++) {
@@ -304,7 +304,7 @@ class IntegrationTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($records)
-            ->map(function ($id, $record) {
+            ->map(function ($record) {
                 yield [$record['category'], $record['value']];
             })
             ->reduce(function ($category, $values) {

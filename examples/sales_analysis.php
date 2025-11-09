@@ -26,7 +26,7 @@ $startTime = microtime(true);
 // Analyze sales by product
 $salesByProduct = (new MapReduceBuilder())
     ->input($sales)
-    ->map(function ($id, $sale) {
+    ->map(function ($sale) {
         yield [$sale['product'], $sale['amount']];
     })
     ->reduce(function ($product, $amounts) {
@@ -64,7 +64,7 @@ echo "\n=== Sales by Region ===\n";
 
 $salesByRegion = (new MapReduceBuilder())
     ->input($sales)
-    ->map(function ($id, $sale) {
+    ->map(function ($sale) {
         yield [$sale['region'], $sale['amount']];
     })
     ->reduce(function ($region, $amounts) {

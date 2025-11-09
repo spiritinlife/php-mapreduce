@@ -153,7 +153,7 @@ class PerformanceBenchmark
         echo "Dataset: {$dataSize} documents x 50 words\n";
         echo "========================================\n";
 
-        $mapper = function ($docId, $text) {
+        $mapper = function ($text) {
             foreach (str_word_count(strtolower($text), 1) as $word) {
                 yield [$word, 1];
             }
@@ -204,7 +204,7 @@ class PerformanceBenchmark
         echo "Aggregation Performance Scaling Test\n";
         echo "========================================\n";
 
-        $mapper = function ($id, $record) {
+        $mapper = function ($record) {
             yield [$record['category'], $record['value']];
         };
 
@@ -265,7 +265,7 @@ class PerformanceBenchmark
         echo "Concurrency: Fixed at 4\n";
         echo "========================================\n";
 
-        $mapper = fn($id, $record) => yield [$record['category'], $record['value']];
+        $mapper = fn($record) => yield [$record['category'], $record['value']];
         $reducer = fn($category, $values) => ['sum' => array_sum($values), 'count' => count($values)];
 
         $partitionCounts = [2, 4, 8, 16, 32];
@@ -312,7 +312,7 @@ class PerformanceBenchmark
         echo "Partitions: Fixed at 8\n";
         echo "========================================\n";
 
-        $mapper = fn($id, $record) => yield [$record['category'], $record['value']];
+        $mapper = fn($record) => yield [$record['category'], $record['value']];
         $reducer = fn($category, $values) => array_sum($values);
 
         $concurrencyLevels = [1, 2, 4, 8, 16];
@@ -352,7 +352,7 @@ class PerformanceBenchmark
         echo "Dataset: {$dataSize} records\n";
         echo "========================================\n";
 
-        $mapper = fn($id, $record) => yield [$record['category'], $record['value']];
+        $mapper = fn($record) => yield [$record['category'], $record['value']];
         $reducer = fn($category, $values) => array_sum($values);
 
         $configurations = [
@@ -398,7 +398,7 @@ class PerformanceBenchmark
         echo "Fixed: Concurrency=4, Partitions=8\n";
         echo "========================================\n";
 
-        $mapper = fn($id, $record) => yield [$record['category'], $record['value']];
+        $mapper = fn($record) => yield [$record['category'], $record['value']];
         $reducer = fn($category, $values) => [
             'sum' => array_sum($values),
             'count' => count($values)
@@ -503,7 +503,7 @@ class PerformanceBenchmark
             ],
         ];
 
-        $mapper = fn($id, $record) => yield [$record['category'], $record['value']];
+        $mapper = fn($record) => yield [$record['category'], $record['value']];
         $reducer = fn($category, $values) => [
             'sum' => array_sum($values),
             'count' => count($values)

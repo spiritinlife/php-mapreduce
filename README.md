@@ -36,7 +36,7 @@ $documents = [
 
 $results = (new MapReduceBuilder())
     ->input($documents)
-    ->map(function ($docId, $text) {
+    ->map(function ($text) {
         foreach (str_word_count(strtolower($text), 1) as $word) {
             yield [$word, 1];
         }
@@ -143,23 +143,6 @@ $stmt = $pdo->query('SELECT * FROM large_table');
 })())
 ```
 
-### API/HTTP Streams
-
-```php
-// Process paginated API results
-->input((function() {
-    $page = 1;
-    do {
-        $response = file_get_contents("https://api.example.com/data?page=$page");
-        $data = json_decode($response, true);
-        foreach ($data['items'] as $item) {
-            yield $item;
-        }
-        $page++;
-    } while (!empty($data['items']));
-})())
-```
-
 ### Directory Scanning
 
 ```php
@@ -193,10 +176,10 @@ Set the input data - any array or iterable.
 ```
 
 #### `map(callable $mapper)`
-Define the transformation function. Must yield `[$key, $value]` pairs.
+Define the transformation function. Receives input values and must yield `[$key, $value]` pairs.
 
 ```php
-->map(function ($key, $value) {
+->map(function ($value) {
     // Process and emit key-value pairs
     yield [$newKey, $newValue];
 })
@@ -290,7 +273,7 @@ $sales = [
 
 $totals = (new MapReduceBuilder())
     ->input($sales)
-    ->map(fn($id, $sale) => yield [$sale['product'], $sale['amount']])
+    ->map(fn($sale) => yield [$sale['product'], $sale['amount']])
     ->reduce(fn($product, $amounts) => [
         'total' => array_sum($amounts),
         'average' => array_sum($amounts) / count($amounts),
@@ -303,16 +286,16 @@ $totals = (new MapReduceBuilder())
 
 ```php
 $documents = [
-    1 => 'the quick brown fox',
-    2 => 'the lazy dog',
-    3 => 'quick brown animals',
+    ['id' => 1, 'text' => 'the quick brown fox'],
+    ['id' => 2, 'text' => 'the lazy dog'],
+    ['id' => 3, 'text' => 'quick brown animals'],
 ];
 
 $invertedIndex = (new MapReduceBuilder())
     ->input($documents)
-    ->map(function ($docId, $content) {
-        foreach (array_unique(str_word_count(strtolower($content), 1)) as $word) {
-            yield [$word, $docId];
+    ->map(function ($doc) {
+        foreach (array_unique(str_word_count(strtolower($doc['text']), 1)) as $word) {
+            yield [$word, $doc['id']];
         }
     })
     ->reduce(fn($word, $docIds) => [
@@ -327,7 +310,7 @@ $invertedIndex = (new MapReduceBuilder())
 ```php
 $stats = (new MapReduceBuilder())
     ->input(file('access.log'))
-    ->map(function ($lineNum, $line) {
+    ->map(function ($line) {
         if (preg_match('/^(\S+).*?"GET (\S+).*?" (\d+)/', $line, $m)) {
             yield ["ip:{$m[1]}", 1];
             yield ["status:{$m[3]}", 1];

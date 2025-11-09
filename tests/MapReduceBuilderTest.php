@@ -45,7 +45,7 @@ class MapReduceBuilderTest extends TestCase
 
         // All methods should return the builder instance for chaining
         $this->assertSame($builder, $builder->input([1, 2, 3]));
-        $this->assertSame($builder, $builder->map(fn($k, $v) => yield [$k, $v]));
+        $this->assertSame($builder, $builder->map(fn($v) => yield [$v, $v]));
         $this->assertSame($builder, $builder->reduce(fn($k, $v) => $v));
         $this->assertSame($builder, $builder->concurrent(4));
         $this->assertSame($builder, $builder->partitions(8));
@@ -58,20 +58,25 @@ class MapReduceBuilderTest extends TestCase
     {
         $result = (new MapReduceBuilder())
             ->input(['a' => 1, 'b' => 2])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->execute();
 
         $this->assertCount(2, $result);
-        $this->assertEquals(1, $result['a']['value']);
-        $this->assertEquals(2, $result['b']['value']);
+        // Find values in results
+        $found = [];
+        foreach ($result as $data) {
+            $found[$data['key']] = $data['value'];
+        }
+        $this->assertEquals(1, $found[1]);
+        $this->assertEquals(2, $found[2]);
     }
 
     public function testConcurrentConfiguration(): void
     {
         $result = (new MapReduceBuilder())
             ->input(range(1, 10))
-            ->map(fn($k, $v) => yield ['sum', $v])
+            ->map(fn($v) => yield ['sum', $v])
             ->reduce(fn($k, $v) => array_sum($v))
             ->concurrent(2) // 2 workers
             ->execute();
@@ -83,7 +88,7 @@ class MapReduceBuilderTest extends TestCase
     {
         $result = (new MapReduceBuilder())
             ->input(['a' => 1, 'b' => 2, 'c' => 3])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->partitions(4) // 4 reduce partitions
             ->execute();
@@ -95,7 +100,7 @@ class MapReduceBuilderTest extends TestCase
     {
         $result = (new MapReduceBuilder())
             ->input(range(1, 100))
-            ->map(fn($k, $v) => yield ['total', $v])
+            ->map(fn($v) => yield ['total', $v])
             ->reduce(fn($k, $v) => array_sum($v))
             ->chunkSize(10) // Small chunks
             ->execute();
@@ -109,12 +114,13 @@ class MapReduceBuilderTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input(['x' => 1])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->workingDirectory($customDir)
             ->execute();
 
-        $this->assertEquals(1, $result['x']['value']);
+        $this->assertEquals(1, $result[0]['key']);
+        $this->assertEquals(1, $result[0]['value']);
         // Directory should be cleaned up after execution
         $this->assertDirectoryDoesNotExist($customDir);
     }
@@ -124,7 +130,7 @@ class MapReduceBuilderTest extends TestCase
         // Custom partitioner that groups by first letter
         $result = (new MapReduceBuilder())
             ->input(['apple', 'apricot', 'banana', 'blueberry'])
-            ->map(fn($k, $word) => yield [$word, strlen($word)])
+            ->map(fn($word) => yield [$word, strlen($word)])
             ->partitionBy(function ($word, $numPartitions) {
                 return ord(substr($word, 0, 1)) % $numPartitions;
             })
@@ -142,7 +148,7 @@ class MapReduceBuilderTest extends TestCase
         $this->expectExceptionMessage('Input data is required');
 
         (new MapReduceBuilder())
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v)
             ->execute();
     }
@@ -165,7 +171,7 @@ class MapReduceBuilderTest extends TestCase
 
         (new MapReduceBuilder())
             ->input([1, 2, 3])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->execute();
     }
 
@@ -205,7 +211,7 @@ class MapReduceBuilderTest extends TestCase
                 'doc2' => 'the lazy dog',
                 'doc3' => 'quick brown dogs',
             ])
-            ->map(function ($docId, $text) {
+            ->map(function ($text) {
                 $words = str_word_count(strtolower($text), 1);
                 foreach ($words as $word) {
                     yield [$word, 1];
@@ -235,7 +241,7 @@ class MapReduceBuilderTest extends TestCase
         // Test with minimal configuration (using defaults)
         $result = (new MapReduceBuilder())
             ->input(['a' => 1, 'b' => 2])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->execute();
 
@@ -253,21 +259,25 @@ class MapReduceBuilderTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($generator())
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->execute();
 
         $this->assertCount(3, $result);
-        $this->assertEquals(10, $result['x']['value']);
-        $this->assertEquals(20, $result['y']['value']);
-        $this->assertEquals(30, $result['z']['value']);
+        $found = [];
+        foreach ($result as $data) {
+            $found[$data['key']] = $data['value'];
+        }
+        $this->assertEquals(10, $found[10]);
+        $this->assertEquals(20, $found[20]);
+        $this->assertEquals(30, $found[30]);
     }
 
     public function testEmptyInput(): void
     {
         $result = (new MapReduceBuilder())
             ->input([])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v)
             ->execute();
 
@@ -283,9 +293,10 @@ class MapReduceBuilderTest extends TestCase
             ->input(['a' => 1])
             ->chunkSize(100)
             ->reduce(fn($k, $v) => $v[0])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->execute();
 
-        $this->assertEquals(1, $result['a']['value']);
+        $this->assertEquals(1, $result[0]['key']);
+        $this->assertEquals(1, $result[0]['value']);
     }
 }

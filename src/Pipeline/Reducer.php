@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Spiritinlife\MapReduce\Pipeline;
 
+use Spiritinlife\MapReduce\Utils\BufferedFileReader;
+
 use function Amp\async;
 use function Amp\Future\await;
 
@@ -60,34 +62,34 @@ class Reducer
             return $results;
         }
 
-        // Bulk read entire file at once (much faster than line-by-line)
-        $contents = @file_get_contents($filename);
-        if ($contents === false) {
-            throw new \RuntimeException("Failed to open shuffled file: $filename");
-        }
+        // Use buffered reading for memory-safe processing
+        $reader = new BufferedFileReader($filename);
 
-        // Split into lines in memory (no I/O overhead)
-        $lines = explode("\n", $contents);
-        unset($contents); // Free memory immediately
+        try {
+            while (($line = $reader->getLine()) !== null) {
+                // Skip empty lines
+                if (empty($line)) {
+                    continue;
+                }
 
-        foreach ($lines as $line) {
-            // Skip empty lines
-            if (empty($line)) {
-                continue;
+                $group = unserialize($line);
+                $key = $group['key'];
+                $values = $group['values'];
+
+                // Call reducer function
+                $result = $reducer($key, $values);
+
+                // Store result
+                $results[$this->serializeKey($key)] = [
+                    'key' => $key,
+                    'value' => $result
+                ];
             }
 
-            $group = unserialize($line);
-            $key = $group['key'];
-            $values = $group['values'];
-
-            // Call reducer function
-            $result = $reducer($key, $values);
-
-            // Store result
-            $results[$this->serializeKey($key)] = [
-                'key' => $key,
-                'value' => $result
-            ];
+            $reader->close();
+        } catch (\Exception $e) {
+            $reader->close();
+            throw $e;
         }
 
         return $results;

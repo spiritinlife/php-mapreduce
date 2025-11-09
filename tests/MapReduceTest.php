@@ -50,7 +50,7 @@ class MapReduceTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($documents)
-            ->map(function ($docId, $text) {
+            ->map(function ($text) {
                 $words = str_word_count(strtolower($text), 1);
                 foreach ($words as $word) {
                     yield [$word, 1];
@@ -75,7 +75,7 @@ class MapReduceTest extends TestCase
     {
         $result = (new MapReduceBuilder())
             ->input([])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v)
             ->execute();
 
@@ -87,12 +87,13 @@ class MapReduceTest extends TestCase
     {
         $result = (new MapReduceBuilder())
             ->input(['key' => 'value'])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->execute();
 
         $this->assertCount(1, $result);
-        $this->assertEquals('value', $result['key']['value']);
+        $this->assertEquals('value', $result['value']['key']);
+        $this->assertEquals('value', $result['value']['value']);
     }
 
     public function testMultipleEmitsPerMapper(): void
@@ -101,7 +102,7 @@ class MapReduceTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($data)
-            ->map(function ($key, $value) {
+            ->map(function ($value) {
                 // Emit the value and its square
                 yield ['original', $value];
                 yield ['squared', $value * $value];
@@ -127,7 +128,7 @@ class MapReduceTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($sales)
-            ->map(function ($id, $sale) {
+            ->map(function ($sale) {
                 yield [$sale['category'], $sale['amount']];
             })
             ->reduce(function ($category, $amounts) {
@@ -164,7 +165,7 @@ class MapReduceTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($data)
-            ->map(function ($key, $word) {
+            ->map(function ($word) {
                 yield [$word, strlen($word)];
             })
             ->partitionBy(function ($word, $numPartitions) {
@@ -193,7 +194,7 @@ class MapReduceTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($data)
-            ->map(function ($id, $order) {
+            ->map(function ($order) {
                 // Use array as key
                 yield [
                     ['user_id' => $order['user_id'], 'product_id' => $order['product_id']],
@@ -228,7 +229,7 @@ class MapReduceTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($data)
-            ->map(function ($id, $item) {
+            ->map(function ($item) {
                 yield [$item['category'], $item['value']];
             })
             ->reduce(function ($category, $values) {
@@ -258,7 +259,7 @@ class MapReduceTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($data)
-            ->map(function ($key, $value) {
+            ->map(function ($value) {
                 yield ['sum', $value];
             })
             ->reduce(function ($key, $values) {
@@ -277,7 +278,7 @@ class MapReduceTest extends TestCase
 
         (new MapReduceBuilder())
             ->input([1, 2, 3])
-            ->map(function ($key, $value) {
+            ->map(function ($value) {
                 if ($value === 2) {
                     throw new \RuntimeException('Test exception');
                 }
@@ -293,7 +294,7 @@ class MapReduceTest extends TestCase
 
         (new MapReduceBuilder())
             ->input([1, 2, 3])
-            ->map(fn($k, $v) => yield [$v, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(function ($key, $values) {
                 if ($key === 2) {
                     throw new \RuntimeException('Test exception');
@@ -310,7 +311,7 @@ class MapReduceTest extends TestCase
 
         (new MapReduceBuilder())
             ->input([1])
-            ->map(function ($key, $value) {
+            ->map(function ($value) {
                 yield 'not-an-array'; // Invalid: should be [key, value]
             })
             ->reduce(fn($k, $v) => $v)
@@ -335,7 +336,7 @@ class MapReduceTest extends TestCase
 
         (new MapReduceBuilder())
             ->input([1, 2, 3])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->execute();
     }
 
@@ -345,7 +346,7 @@ class MapReduceTest extends TestCase
         $this->expectExceptionMessage('Input data is required');
 
         (new MapReduceBuilder())
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v)
             ->execute();
     }
@@ -374,7 +375,7 @@ class MapReduceTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input(['a' => 1, 'b' => 2])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->workingDirectory($customDir)
             ->execute();
@@ -390,7 +391,7 @@ class MapReduceTest extends TestCase
 
         $result = $mapReduce->execute(
             input: ['doc1' => 'hello world', 'doc2' => 'hello'],
-            mapper: function ($docId, $text) {
+            mapper: function ($text) {
                 foreach (explode(' ', $text) as $word) {
                     yield [$word, 1];
                 }
@@ -410,7 +411,7 @@ class MapReduceTest extends TestCase
         try {
             (new MapReduceBuilder())
                 ->input([1, 2, 3])
-                ->map(function ($key, $value) {
+                ->map(function ($value) {
                     if ($value === 2) {
                         throw new \RuntimeException('Test exception');
                     }
@@ -438,14 +439,18 @@ class MapReduceTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($generator())
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->execute();
 
         $this->assertCount(3, $result);
-        $this->assertEquals(1, $result['a']['value']);
-        $this->assertEquals(2, $result['b']['value']);
-        $this->assertEquals(3, $result['c']['value']);
+        $found = [];
+        foreach ($result as $data) {
+            $found[$data['key']] = $data['value'];
+        }
+        $this->assertEquals(1, $found[1]);
+        $this->assertEquals(2, $found[2]);
+        $this->assertEquals(3, $found[3]);
     }
 
     public function testPartitionerReturningInvalidValue(): void
@@ -455,7 +460,7 @@ class MapReduceTest extends TestCase
 
         (new MapReduceBuilder())
             ->input(['a' => 1])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v)
             ->partitionBy(function ($key, $numPartitions) {
                 return 999; // Invalid: out of range
@@ -468,7 +473,7 @@ class MapReduceTest extends TestCase
     {
         $result = (new MapReduceBuilder())
             ->input(['a' => 1, 'b' => 2])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->execute();
 
@@ -485,7 +490,7 @@ class MapReduceTest extends TestCase
         // Mapper that doesn't emit anything
         $result = (new MapReduceBuilder())
             ->input([1, 2, 3])
-            ->map(function ($k, $v) {
+            ->map(function ($v) {
                 // Emit nothing
                 return;
             })
@@ -499,7 +504,7 @@ class MapReduceTest extends TestCase
     {
         $result = (new MapReduceBuilder())
             ->input(range(1, 10))
-            ->map(function ($key, $value) {
+            ->map(function ($value) {
                 // Only emit even numbers
                 if ($value % 2 === 0) {
                     yield ['even', $value];
@@ -518,15 +523,19 @@ class MapReduceTest extends TestCase
     {
         $result = (new MapReduceBuilder())
             ->input(['a' => 1, 'b' => 2, 'c' => 3])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->chunkSize(1000) // Test chunk size configuration
             ->execute();
 
         $this->assertCount(3, $result);
-        $this->assertEquals(1, $result['a']['value']);
-        $this->assertEquals(2, $result['b']['value']);
-        $this->assertEquals(3, $result['c']['value']);
+        $found = [];
+        foreach ($result as $data) {
+            $found[$data['key']] = $data['value'];
+        }
+        $this->assertEquals(1, $found[1]);
+        $this->assertEquals(2, $found[2]);
+        $this->assertEquals(3, $found[3]);
     }
 
     public function testInvalidChunkSizeThrowsException(): void
@@ -551,7 +560,7 @@ class MapReduceTest extends TestCase
 
         $result = (new MapReduceBuilder())
             ->input($data)
-            ->map(function ($id, $item) {
+            ->map(function ($item) {
                 yield [$item['category'], $item['value']];
             })
             ->reduce(function ($category, $values) {
@@ -622,7 +631,7 @@ class MapReduceTest extends TestCase
         $mapReduce = new MapReduce(2, $this->tempDir . '/invalid_partitions');
         $mapReduce->execute(
             input: [1, 2, 3],
-            mapper: fn($k, $v) => yield [$k, $v],
+            mapper: fn($v) => yield [$v, $v],
             reducer: fn($k, $v) => $v,
             reducePartitions: 0
         );
@@ -633,15 +642,16 @@ class MapReduceTest extends TestCase
         // Test that when mapper returns a single pair (not iterable), it's wrapped
         $result = (new MapReduceBuilder())
             ->input(['a' => 1])
-            ->map(function ($k, $v) {
+            ->map(function ($v) {
                 // Return array instead of yielding
-                return [[$k, $v]];
+                return [[$v, $v]];
             })
             ->reduce(fn($k, $v) => $v[0])
             ->execute();
 
         $this->assertCount(1, $result);
-        $this->assertEquals(1, $result['a']['value']);
+        $this->assertEquals(1, $result[0]['key']);
+        $this->assertEquals(1, $result[0]['value']);
     }
 
     public function testMapperWithInvalidPairStructure(): void
@@ -651,8 +661,8 @@ class MapReduceTest extends TestCase
 
         (new MapReduceBuilder())
             ->input(['a' => 1])
-            ->map(function ($k, $v) {
-                yield [$k, $v, 'extra']; // Invalid: 3 elements instead of 2
+            ->map(function ($v) {
+                yield [$v, $v, 'extra']; // Invalid: 3 elements instead of 2
             })
             ->reduce(fn($k, $v) => $v)
             ->execute();
@@ -676,7 +686,7 @@ class MapReduceTest extends TestCase
         // Test with integer keys in mapper output
         $result = (new MapReduceBuilder())
             ->input(['a' => 100, 'b' => 200, 'c' => 300])
-            ->map(function ($key, $value) {
+            ->map(function ($value) {
                 // Use integer keys in the map output
                 yield [10, $value];
                 yield [20, $value * 2];
@@ -713,7 +723,7 @@ class MapReduceTest extends TestCase
         // Test with float keys in mapper output
         $result = (new MapReduceBuilder())
             ->input([1, 2, 3])
-            ->map(function ($key, $value) {
+            ->map(function ($value) {
                 yield [1.5, $value]; // Float key
                 yield [2.5, $value * 2];
             })
@@ -781,7 +791,7 @@ class MapReduceTest extends TestCase
         // Execute a simple MapReduce operation
         $result = $mapReduce->execute(
             ['a' => 1],
-            fn($k, $v) => yield [$k, $v],
+            fn($v) => yield [$v, $v],
             fn($k, $v) => $v[0],
             1
         );
@@ -801,7 +811,7 @@ class MapReduceTest extends TestCase
         // (we can't call it directly as it's protected, but it's tested through execute)
         $result = $mapReduce->execute(
             ['a' => 1],
-            fn($k, $v) => yield [$k, $v],
+            fn($v) => yield [$v, $v],
             fn($k, $v) => $v[0],
             1
         );
@@ -818,7 +828,7 @@ class MapReduceTest extends TestCase
         // Execute a simple operation
         $result = $mapReduce->execute(
             ['a' => 1],
-            fn($k, $v) => yield [$k, $v],
+            fn($v) => yield [$v, $v],
             fn($k, $v) => $v[0],
             1
         );
@@ -838,7 +848,7 @@ class MapReduceTest extends TestCase
         // Execute operation
         $result = $mapReduce->execute(
             ['a' => 1],
-            fn($k, $v) => yield [$k, $v],
+            fn($v) => yield [$v, $v],
             fn($k, $v) => $v[0],
             1
         );
@@ -871,19 +881,27 @@ class MapReduceTest extends TestCase
         // (though cleanup happens after each)
         $result1 = (new MapReduceBuilder())
             ->input(['a' => 1])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->execute();
 
-        $this->assertEquals(1, $result1['a']['value']);
+        $found1 = [];
+        foreach ($result1 as $data) {
+            $found1[$data['key']] = $data['value'];
+        }
+        $this->assertEquals(1, $found1[1]);
 
         // Create new instance for second execution
         $result2 = (new MapReduceBuilder())
             ->input(['b' => 2])
-            ->map(fn($k, $v) => yield [$k, $v])
+            ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->execute();
 
-        $this->assertEquals(2, $result2['b']['value']);
+        $found2 = [];
+        foreach ($result2 as $data) {
+            $found2[$data['key']] = $data['value'];
+        }
+        $this->assertEquals(2, $found2[2]);
     }
 }
