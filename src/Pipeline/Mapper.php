@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Spiritinlife\MapReduce\Pipeline;
 
+use Amp\Pipeline\Queue;
 use Spiritinlife\MapReduce\Utils\BufferedFileWriter;
 
 use function Amp\async;
@@ -55,27 +56,34 @@ class Mapper
      */
     public function map(iterable $input, callable $mapper, int $reducePartitions): array
     {
-        $chunks = $this->chunkInput($input, $this->concurrency);
+        // Queue enables concurrent work distribution via iterate()
+        // Multiple workers can safely consume from the same iterator (work-stealing pattern)
+        $queue = new Queue();
+        $iterator = $queue->iterate();
 
-        if (empty($chunks)) {
-            return array_fill(0, $reducePartitions, []);
-        }
+        // Producer coroutine: push() provides backpressure - blocks until item is consumed
+        // This prevents loading entire iterator into memory
+        async(function () use ($input, $queue) {
+            foreach ($input as $key => $value) {
+                $queue->push([$key, $value]);
+            }
+            $queue->complete();
+        });
 
-        // Create async tasks for each chunk
+        // Spawn concurrent worker coroutines that share the iterator
+        // Each worker pulls unique items - no duplication across workers
         $futures = [];
-        foreach ($chunks as $chunkIndex => $chunk) {
-            $futures[] = async(function () use ($chunkIndex, $chunk, $mapper, $reducePartitions) {
-                return $this->processChunk($chunkIndex, $chunk, $mapper, $reducePartitions);
+        for ($workerIndex = 0; $workerIndex < $this->concurrency; $workerIndex++) {
+            $futures[] = async(function () use ($iterator, $workerIndex, $mapper, $reducePartitions) {
+                return $this->processWorker($iterator, $workerIndex, $mapper, $reducePartitions);
             });
         }
 
-        // Wait for all mappers to complete
-        $results = await($futures);
+        $workerResults = await($futures);
 
-        // Reorganize by partition: partition -> [file1, file2, ...]
         $mapOutputFiles = array_fill(0, $reducePartitions, []);
-        foreach ($results as $mapperFiles) {
-            foreach ($mapperFiles as $partition => $file) {
+        foreach ($workerResults as $workerFiles) {
+            foreach ($workerFiles as $partition => $file) {
                 $mapOutputFiles[$partition][] = $file;
             }
         }
@@ -84,53 +92,55 @@ class Mapper
     }
 
     /**
-     * Process a single chunk in the map phase
+     * Process items from iterator with persistent file writers per worker
      *
-     * @param int $chunkIndex Chunk index
-     * @param array<mixed, mixed> $chunk Data chunk to process
+     * @param iterable $iterator Input iterator to consume from (shared across workers)
+     * @param int $workerIndex Worker index for unique file naming
      * @param callable $mapper Mapper function
      * @param int $reducePartitions Number of reduce partitions
-     * @return array<int, string> Partition files created by this mapper
+     * @return array<int, string> Partition files created by this worker
      */
-    protected function processChunk(
-        int $chunkIndex,
-        array $chunk,
+    protected function processWorker(
+        iterable $iterator,
+        int $workerIndex,
         callable $mapper,
         int $reducePartitions
     ): array {
-        // Create buffered writers for each partition
         $partitionWriters = [];
         $partitionFiles = [];
+        $writersCreated = false;
 
         try {
-            for ($i = 0; $i < $reducePartitions; $i++) {
-                $filename = "{$this->workingDir}/map_{$chunkIndex}_partition_{$i}.tmp";
-                $partitionWriters[$i] = new BufferedFileWriter($filename, $this->bufferSize);
-                $partitionFiles[$i] = $filename;
-            }
+            foreach ($iterator as [$key, $value]) {
+                // Lazy initialization: only create files if this worker gets items
+                // Empty input = no files created, avoiding unnecessary I/O
+                if (!$writersCreated) {
+                    for ($i = 0; $i < $reducePartitions; $i++) {
+                        $filename = "{$this->workingDir}/map_{$workerIndex}_partition_{$i}.tmp";
+                        $partitionWriters[$i] = new BufferedFileWriter($filename, $this->bufferSize);
+                        $partitionFiles[$i] = $filename;
+                    }
+                    $writersCreated = true;
+                }
 
-            // Process each item in the chunk
-            foreach ($chunk as $key => $value) {
-                // Call mapper function - it should yield key-value pairs
                 $intermediateResults = $mapper($key, $value);
 
-                // Ensure we have an iterable
+                if ($intermediateResults === null) {
+                    continue;
+                }
+
                 if (!is_iterable($intermediateResults)) {
                     $intermediateResults = [$intermediateResults];
                 }
 
-                // Write intermediate results to appropriate partition files
                 foreach ($intermediateResults as $pair) {
                     if (!is_array($pair) || count($pair) !== 2) {
                         throw new \RuntimeException('Mapper must yield [key, value] pairs');
                     }
 
                     [$intermediateKey, $intermediateValue] = $pair;
-
-                    // Determine which partition this key belongs to
                     $partition = $this->getPartition($intermediateKey, $reducePartitions);
 
-                    // Write to buffered writer (auto-flushes when buffer is full)
                     $partitionWriters[$partition]->writeLine(serialize([
                         'key' => $intermediateKey,
                         'value' => $intermediateValue
@@ -138,12 +148,10 @@ class Mapper
                 }
             }
 
-            // Close all writers (automatically flushes remaining data)
             foreach ($partitionWriters as $writer) {
                 $writer->close();
             }
         } catch (\Exception $e) {
-            // Ensure all writers are closed on error
             foreach ($partitionWriters as $writer) {
                 $writer->close();
             }
@@ -153,24 +161,6 @@ class Mapper
         return $partitionFiles;
     }
 
-    /**
-     * Chunk input data for concurrent processing
-     *
-     * @param iterable<mixed, mixed> $input Input data
-     * @param int $chunks Number of chunks
-     * @return array<int, array<mixed, mixed>> Chunked input data
-     */
-    protected function chunkInput(iterable $input, int $chunks): array
-    {
-        $array = is_array($input) ? $input : iterator_to_array($input);
-
-        if (empty($array)) {
-            return [];
-        }
-
-        $chunkSize = max(1, (int)ceil(count($array) / $chunks));
-        return array_chunk($array, $chunkSize, true);
-    }
 
     /**
      * Determine partition for a key
@@ -193,7 +183,6 @@ class Mapper
             return $partition;
         }
 
-        // Default: hash-based partitioning
         $hash = crc32($this->serializeKey($key));
         return abs($hash) % $numPartitions;
     }

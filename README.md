@@ -8,6 +8,7 @@ A high-performance, framework-agnostic MapReduce implementation for PHP that pro
 ## Why Use This?
 
 - Process datasets larger than RAM using memory-efficient disk storage
+- **Stream iterators without loading into memory** - process large files, database cursors, and API responses efficiently
 - Utilize multiple CPU cores for true parallel processing
 - Framework-agnostic - works with any PHP project
 - Handle millions of records with predictable memory usage
@@ -63,6 +64,8 @@ Input → [Parallel Map] → [Parallel Shuffle & Sort] → [Parallel Reduce] →
 ## Input Types
 
 MapReduce accepts any iterable as input - arrays, generators, iterators, or custom iterables.
+
+> **💡 True Streaming:**  Large files, database cursors, and API paginations are consumed as they're produced - never loading the entire dataset into memory.
 
 ### Arrays and Basic Iterables
 
