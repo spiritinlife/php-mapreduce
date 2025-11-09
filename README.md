@@ -216,31 +216,40 @@ Number of reduce partitions. Default: same as `concurrent()`
 **Tip:** Use 1-2x concurrency level. More partitions = better parallelism but more overhead.
 
 #### `chunkSize(int $records)`
-Records per chunk during shuffle phase. Default: `10000`
+**Controls:** Memory usage during shuffle phase sorting. Default: `10000`
 
-Controls memory usage during sorting. Larger = faster but more RAM.
+Determines how many records accumulate in memory before being sorted and written as a chunk file during external sorting. This only affects the shuffle phase.
 
 ```php
 ->chunkSize(50000)   // High-memory system
 ->chunkSize(2000)    // Memory-constrained
 ```
 
+**Memory impact:** `chunkSize × average_record_size` bytes per sort operation
+
 #### `bufferSize(int $records)`
-Records buffered before disk write. Default: `1000`
+**Controls:** I/O write buffering across all phases (map, shuffle, reduce). Default: `1000`
 
-Controls I/O performance. Larger buffers = fewer disk writes but more RAM.
-
-**Memory per partition:** `bufferSize × average_record_size` bytes
+Determines how many records are buffered in memory before flushing to disk. Affects the frequency of `fwrite()` system calls. Used by all phases, not just shuffle.
 
 ```php
 ->bufferSize(5000)   // Large datasets, plenty of RAM
 ->bufferSize(500)    // Memory-constrained
 ```
 
+**Memory impact:** `bufferSize × average_record_size` bytes per writer (multiple writers in map phase)
+
 **Guidelines:**
 - Small datasets (<10K): 100-500
 - Medium datasets (10K-1M): 1000-5000
 - Large datasets (>1M): 5000-10000
+
+> **💡 Why Two Parameters?**
+>
+> - **`chunkSize`** controls sorting granularity (shuffle only) - larger values create fewer chunk files to merge
+> - **`bufferSize`** controls write batching (all phases) - larger values reduce system calls
+>
+> These are independent memory concerns. For example, in the shuffle phase, a 10,000-record chunk will be written in ~10 buffer flushes if bufferSize=1000.
 
 #### `workingDirectory(string $path)`
 Directory for temporary files. Default: system temp
@@ -329,36 +338,46 @@ $stats = (new MapReduceBuilder())
 (new MapReduceBuilder())
     ->concurrent(8)              // CPU cores (or 2-3x for I/O tasks)
     ->partitions(16)             // 1-2x concurrency
-    ->chunkSize(50000)           // Larger = faster, more RAM
-    ->bufferSize(5000)           // Larger = fewer writes, more RAM
+    ->chunkSize(50000)           // Shuffle sort memory (larger = fewer merges)
+    ->bufferSize(5000)           // Write buffer across all phases (larger = fewer syscalls)
     ->workingDirectory('/ssd')   // Use fast storage for large jobs
 ```
 
 ### Memory vs Performance
 
-**Low Memory System:**
+**Low Memory System (2GB RAM):**
 ```php
-->chunkSize(2000)
-->bufferSize(500)
+->chunkSize(2000)    // Small sort chunks
+->bufferSize(500)    // Small write buffers
 ```
 
-**High Performance System (SSD, plenty RAM):**
+**High Performance System (SSD, 32GB RAM):**
 ```php
-->chunkSize(100000)
-->bufferSize(10000)
+->chunkSize(100000)  // Large sort chunks for fast sorting
+->bufferSize(10000)  // Large buffers to minimize disk I/O
 ->workingDirectory('/mnt/fast-ssd/tmp')
 ```
 
+**Tuning independently:**
+- Slow disk? Increase `bufferSize` to batch more writes
+- Limited RAM during shuffle? Decrease `chunkSize` to reduce sort memory
+- Many concurrent map workers? Decrease `bufferSize` (memory = workers × partitions × bufferSize)
+
 ### Benchmarks
 
-Tested on 4-core, 16GB RAM, SSD:
+Tested on Apple M2 Pro (10-core), 16GB RAM, SSD:
 
-| Records | Concurrency | Time | Memory |
-|---------|-------------|------|--------|
-| 10K     | 4           | 0.5s | 80MB   |
-| 100K    | 4           | 3s   | 150MB  |
-| 1M      | 8           | 25s  | 280MB  |
-| 10M     | 8           | 4m30s| 420MB  |
+| Records | Concurrency | Time  | Memory |
+|---------|-------------|-------|--------|
+| 10K     | 4           | 0.3s  | 2MB    |
+| 100K    | 4           | 2.9s  | 6MB    |
+| 1M      | 8           | 33s   | 8MB    |
+| 10M     | 8           | 6m12s | 73MB   |
+
+Run your own benchmarks:
+```bash
+php bin/benchmark-readme.php
+```
 
 ## Testing
 
