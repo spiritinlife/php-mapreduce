@@ -398,8 +398,3 @@ composer cs-check       # Code style check (PSR-12)
 ## License
 
 MIT License - see [LICENSE](LICENSE) file
-
-## Support
-
-- Issues: [github.com/spiritinlife/php-mapreduce/issues](https://github.com/spiritinlife/php-mapreduce/issues)
-- Email: george.chailazopoulos@gmail.com
