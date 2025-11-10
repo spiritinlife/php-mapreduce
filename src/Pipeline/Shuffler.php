@@ -116,73 +116,43 @@ class Shuffler
 
             // Always use buffered reading for consistency and memory safety
             $reader = new BufferedFileReader($filename);
-            $lines = [];
 
             while (($line = $reader->getLine()) !== null) {
-                $lines[] = $line;
+                // Skip empty lines
+                if (empty($line)) {
+                    continue;
+                }
+
+                $pair = unserialize($line);
+                $chunk[] = [
+                    'serialized_key' => $this->serializeKey($pair['key']),
+                    'original_key' => $pair['key'],
+                    'value' => $pair['value']
+                ];
+
+                $recordCount++;
+
+                // When chunk is full, sort and write it
+                if ($recordCount >= $this->chunkSize) {
+                    $chunkFile = $this->writeChunk($partition, $chunkIndex, $chunk);
+                    $chunkFiles[] = $chunkFile;
+                    $chunkIndex++;
+
+                    $chunk = [];
+                    $recordCount = 0;
+                }
             }
+
             $reader->close();
-
-            $this->processLines($lines, $partition, $chunkIndex, $chunk, $recordCount, $chunkFiles);
-        }
-
-        return $chunkFiles;
-    }
-
-    /**
-     * Process lines and write chunks
-     *
-     * @param array<int, string> $lines Lines to process
-     * @param int $partition Partition number
-     * @param int &$chunkIndex Current chunk index (passed by reference)
-     * @param array<int, array{serialized_key: string, original_key: mixed, value: mixed}> &$chunk Current chunk buffer (passed by reference)
-     * @param int &$recordCount Current record count (passed by reference)
-     * @param array<int, string> &$chunkFiles List of chunk files (passed by reference)
-     */
-    private function processLines(
-        array $lines,
-        int $partition,
-        int &$chunkIndex,
-        array &$chunk,
-        int &$recordCount,
-        array &$chunkFiles
-    ): void {
-        foreach ($lines as $line) {
-            // Skip empty lines
-            if (empty($line)) {
-                continue;
-            }
-
-            $pair = unserialize($line);
-            $chunk[] = [
-                'serialized_key' => $this->serializeKey($pair['key']),
-                'original_key' => $pair['key'],
-                'value' => $pair['value']
-            ];
-
-            $recordCount++;
-
-            // When chunk is full, sort and write it
-            if ($recordCount >= $this->chunkSize) {
-                $chunkFile = $this->writeChunk($partition, $chunkIndex, $chunk);
-                $chunkFiles[] = $chunkFile;
-                $chunkIndex++;
-
-                $chunk = [];
-                $recordCount = 0;
-            }
         }
 
         // Write remaining records as final chunk
         if (!empty($chunk)) {
             $chunkFile = $this->writeChunk($partition, $chunkIndex, $chunk);
             $chunkFiles[] = $chunkFile;
-            $chunkIndex++;
-
-            // Reset for next file
-            $chunk = [];
-            $recordCount = 0;
         }
+
+        return $chunkFiles;
     }
 
     /**
@@ -196,7 +166,7 @@ class Shuffler
     private function writeChunk(int $partition, int $chunkIndex, array $chunk): string
     {
         // Sort chunk by serialized key
-        usort($chunk, fn($a, $b) => strcmp($a['serialized_key'], $b['serialized_key']));
+        usort($chunk, fn ($a, $b) => strcmp($a['serialized_key'], $b['serialized_key']));
 
         $chunkFile = "{$this->workingDir}/chunk_{$partition}_{$chunkIndex}.tmp";
         $writer = new BufferedFileWriter($chunkFile, $this->bufferSize);
