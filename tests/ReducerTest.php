@@ -189,7 +189,7 @@ class ReducerTest extends TestCase
         $reducer = new Reducer();
 
         $file = "{$this->tempDir}/shuffled_0.tmp";
-        
+
         $this->createShuffledFile($file, [
             '10' => [1, 2, 3],
             '20' => [4, 5],

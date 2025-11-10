@@ -291,7 +291,7 @@ class MapReduceTest extends TestCase
     {
         $this->expectException(\RuntimeException::class);
 
-       $this->generatorToArray((new MapReduceBuilder())
+        $this->generatorToArray((new MapReduceBuilder())
             ->input([1, 2, 3])
             ->map(function ($value) {
                 if ($value === 2) {
@@ -324,7 +324,7 @@ class MapReduceTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Mapper must yield [key, value] pairs');
 
-       $this->generatorToArray((new MapReduceBuilder())
+        $this->generatorToArray((new MapReduceBuilder())
             ->input([1])
             ->map(function ($value) {
                 yield 'not-an-array'; // Invalid: should be [key, value]
@@ -338,7 +338,7 @@ class MapReduceTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Mapper function is required');
 
-       $this->generatorToArray((new MapReduceBuilder())
+        $this->generatorToArray((new MapReduceBuilder())
             ->input([1, 2, 3])
             ->reduce(fn($k, $v) => $v)
             ->execute());
@@ -349,7 +349,7 @@ class MapReduceTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Reducer function is required');
 
-       $this->generatorToArray((new MapReduceBuilder())
+        $this->generatorToArray((new MapReduceBuilder())
             ->input([1, 2, 3])
             ->map(fn($v) => yield [$v, $v])
             ->execute());
@@ -360,7 +360,7 @@ class MapReduceTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Input data is required');
 
-       $this->generatorToArray((new MapReduceBuilder())
+        $this->generatorToArray((new MapReduceBuilder())
             ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v)
             ->execute());
@@ -371,7 +371,7 @@ class MapReduceTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Concurrency must be at least 1');
 
-       (new MapReduceBuilder())
+        (new MapReduceBuilder())
             ->concurrent(0);
     }
 
@@ -380,7 +380,7 @@ class MapReduceTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Partitions must be at least 1');
 
-       (new MapReduceBuilder())
+        (new MapReduceBuilder())
             ->partitions(0);
     }
 
@@ -424,7 +424,7 @@ class MapReduceTest extends TestCase
         $customDir = $this->tempDir . '/cleanup_test';
 
         try {
-           (new MapReduceBuilder())
+            (new MapReduceBuilder())
                 ->input([1, 2, 3])
                 ->map(function ($value) {
                     if ($value === 2) {
@@ -473,7 +473,7 @@ class MapReduceTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Partitioner must return an integer');
 
-       $this->generatorToArray((new MapReduceBuilder())
+        $this->generatorToArray((new MapReduceBuilder())
             ->input(['a' => 1])
             ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v)
@@ -558,7 +558,7 @@ class MapReduceTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Chunk size must be at least 1');
 
-       (new MapReduceBuilder())
+        (new MapReduceBuilder())
             ->chunkSize(0);
     }
 
@@ -674,7 +674,7 @@ class MapReduceTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Mapper must yield [key, value] pairs');
 
-       $this->generatorToArray((new MapReduceBuilder())
+        $this->generatorToArray((new MapReduceBuilder())
             ->input(['a' => 1])
             ->map(function ($v) {
                 yield [$v, $v, 'extra']; // Invalid: 3 elements instead of 2
@@ -894,7 +894,7 @@ class MapReduceTest extends TestCase
     {
         // Test that we can execute multiple operations with the same instance
         // (though cleanup happens after each)
-        $result1 =(new MapReduceBuilder())
+        $result1 = (new MapReduceBuilder())
             ->input(['a' => 1])
             ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
@@ -907,7 +907,7 @@ class MapReduceTest extends TestCase
         $this->assertEquals(1, $found1[1]);
 
         // Create new instance for second execution
-        $result2 =(new MapReduceBuilder())
+        $result2 = (new MapReduceBuilder())
             ->input(['b' => 2])
             ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])

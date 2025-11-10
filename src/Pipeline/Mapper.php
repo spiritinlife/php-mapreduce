@@ -94,7 +94,7 @@ class Mapper
     /**
      * Process items from iterator with persistent file writers per worker
      *
-     * @param iterable $iterator Input iterator to consume from (shared across workers)
+     * @param iterable<mixed> $iterator Input iterator to consume from (shared across workers)
      * @param int $workerIndex Worker index for unique file naming
      * @param callable $mapper Mapper function
      * @param int $reducePartitions Number of reduce partitions

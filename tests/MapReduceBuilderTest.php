@@ -184,7 +184,7 @@ class MapReduceBuilderTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Reducer function is required');
 
-       $this->generatorToArray((new MapReduceBuilder())
+        $this->generatorToArray((new MapReduceBuilder())
             ->input([1, 2, 3])
             ->map(fn($v) => yield [$v, $v])
             ->execute());
@@ -195,7 +195,7 @@ class MapReduceBuilderTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Concurrency must be at least 1');
 
-       (new MapReduceBuilder())
+        (new MapReduceBuilder())
             ->concurrent(0);
     }
 
@@ -204,7 +204,7 @@ class MapReduceBuilderTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Partitions must be at least 1');
 
-       (new MapReduceBuilder())
+        (new MapReduceBuilder())
             ->partitions(0);
     }
 
@@ -213,7 +213,7 @@ class MapReduceBuilderTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Chunk size must be at least 1');
 
-       (new MapReduceBuilder())
+        (new MapReduceBuilder())
             ->chunkSize(0);
     }
 

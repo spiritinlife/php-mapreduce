@@ -414,7 +414,7 @@ class ShufflerTest extends TestCase
         $this->assertArrayHasKey('50', $results);
         $this->assertArrayHasKey('75', $results);
         $this->assertArrayHasKey('100', $results);
-        
+
         $this->assertEquals(['b'], $results['50']);
         $this->assertEquals(['d'], $results['75']);
         $this->assertEquals(['a', 'c'], $results['100']);
@@ -459,7 +459,7 @@ class ShufflerTest extends TestCase
         $this->assertArrayHasKey('42', $results);
         $this->assertArrayHasKey('3.14', $results);
         $this->assertEquals([1, 5], $results['string']);
-        
+
         $this->assertEquals([2], $results['42']);
         $this->assertEquals([3], $results['3.14']);
         $this->assertCount(4, $results);

@@ -74,7 +74,7 @@ class InputTypesTest extends TestCase
     {
         $data = ['x' => 10, 'y' => 20];
 
-        $result = $this->generatorToArray(            
+        $result = $this->generatorToArray(
             (new MapReduceBuilder())
                 ->input(new \ArrayIterator($data))
                 ->map(fn($v) => yield [$v, $v])
@@ -104,7 +104,7 @@ class InputTypesTest extends TestCase
                 ->map(fn($v) => yield ['sum', $v])
                 ->reduce(fn($k, $v) => array_sum($v))
                 ->execute()
-            );
+        );
 
         $this->assertEquals(6, $result['sum']['value']);
     }
@@ -125,7 +125,7 @@ class InputTypesTest extends TestCase
                 })
                 ->reduce(fn($k, $v) => array_sum($v))
                 ->execute()
-            );
+        );
 
         $this->assertEquals(3, $result['count']['value']);
     }
@@ -153,7 +153,7 @@ class InputTypesTest extends TestCase
                 ->map(fn($row) => yield [$row['name'], $row['value']])
                 ->reduce(fn($k, $v) => $v[0])
                 ->execute()
-            );
+        );
 
         $this->assertEquals(100, $result['Alice']['value']);
         $this->assertEquals(200, $result['Bob']['value']);
@@ -213,7 +213,7 @@ class InputTypesTest extends TestCase
                 ->map(fn($path) => yield ['count', 1])
                 ->reduce(fn($k, $v) => array_sum($v))
                 ->execute()
-            );
+        );
 
         $this->assertEquals(2, $result['count']['value']);
     }

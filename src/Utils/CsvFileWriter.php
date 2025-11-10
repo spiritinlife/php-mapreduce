@@ -206,7 +206,8 @@ class CsvFileWriter
             return $value ? '1' : '0';
         }
         if (is_array($value) || is_object($value)) {
-            return json_encode($value);
+            $encoded = json_encode($value);
+            return $encoded !== false ? $encoded : '{}';
         }
         return (string) $value;
     }
