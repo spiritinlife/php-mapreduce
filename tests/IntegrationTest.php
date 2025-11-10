@@ -304,6 +304,68 @@ class IntegrationTest extends TestCase
         $this->assertEquals(1, $cooccurrences['A,C']['value']);
     }
 
+    public function testSimpleCounterWithRepeatedYields(): void
+    {
+        // 10 records, each representing a buyer
+        $records = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+        $result = $this->generatorToArray((new MapReduceBuilder())
+            ->input($records)
+            ->map(function ($record) {
+                // Each input yields the same key-value pair 10 times
+                for ($i = 0; $i < 10; $i++) {
+                    yield ['total_buyers', 1];
+                }
+            })
+            ->reduce(function ($key, $values) {
+                return array_sum($values);
+            })
+            ->concurrent(2)
+            ->execute());
+
+        // 10 input records × 10 yields each = 100 total yields
+        // All mapped to the same key 'total_buyers', so should sum to 100
+        $this->assertEquals(100, $result['total_buyers']['value']);
+    }
+
+    public function testLargeDatasetWithCommonKey(): void
+    {
+        // Test for regression of bug where keys emitted from every row
+        // were lost when dataset was large (>5000 rows).
+        // Regression test for: https://github.com/spiritinlife/php-mapreduce/issues/XX
+
+        // Generate 20,000 records - large enough to trigger the bug
+        $records = [];
+        for ($i = 1; $i <= 20000; $i++) {
+            $records[] = ['id' => $i, 'value' => rand(1, 100)];
+        }
+
+        $result = $this->generatorToArray((new MapReduceBuilder())
+            ->input($records)
+            ->map(function ($row) {
+                // Emit a unique key for each row
+                yield ["item_{$row['id']}", 1];
+
+                // Emit a COMMON key from EVERY row
+                // This key appears 20,000 times and should not be lost
+                yield ['total_count', 1];
+            })
+            ->reduce(function ($key, $values) {
+                return array_sum(iterator_to_array($values));
+            })
+            ->concurrent(1)
+            ->chunkSize(10000)
+            ->bufferSize(5000)
+            ->execute());
+
+        // Verify the common key is not lost
+        $this->assertArrayHasKey('total_count', $result, 'total_count key should be present in results');
+        $this->assertEquals(20000, $result['total_count']['value'], 'total_count should sum to 20000');
+
+        // Also verify unique keys are all present
+        $this->assertCount(20001, $result, 'Should have 20000 unique items + 1 total_count');
+    }
+
     public function testPerformanceWithLargeDataset(): void
     {
         // Generate 50,000 records

@@ -65,8 +65,9 @@ class BufferedFileReader
             return $this->buffer[$this->bufferIndex++];
         }
 
-        // Refill buffer if not at EOF
-        if (!$this->eof) {
+        // Keep refilling buffer until we get data or reach EOF
+        // This handles cases where a line spans multiple chunks
+        while (!$this->eof) {
             $this->fillBuffer();
 
             if ($this->bufferIndex < count($this->buffer)) {
