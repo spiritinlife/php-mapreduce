@@ -53,7 +53,7 @@ function runBenchmark(int $recordCount, int $concurrency): array
     $timeBefore = microtime(true);
 
     try {
-        $result = (new MapReduceBuilder())
+        $generator = (new MapReduceBuilder())
             ->input(generateData($recordCount))
             ->map(fn($record) => yield [$record['category'], $record['value']])
             ->reduce(fn($category, $values) => [
@@ -65,6 +65,11 @@ function runBenchmark(int $recordCount, int $concurrency): array
             ->partitions($concurrency)
             ->workingDirectory($tempDir)
             ->execute();
+
+        $result = [];
+        foreach ($generator as $key => $data) {
+            $result[$key] = $data;
+        }
 
         $timeAfter = microtime(true);
         $memoryPeak = memory_get_peak_usage(true);

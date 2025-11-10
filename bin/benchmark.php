@@ -95,7 +95,7 @@ class PerformanceBenchmark
         $memoryBefore = memory_get_usage(true);
         $timeBefore = microtime(true);
 
-        $result = (new MapReduceBuilder())
+        $generator = (new MapReduceBuilder())
             ->input($input)
             ->map($mapper)
             ->reduce($reducer)
@@ -103,6 +103,11 @@ class PerformanceBenchmark
             ->partitions($partitions)
             ->workingDirectory($this->tempDir . "/{$testName}_c{$concurrency}_p{$partitions}")
             ->execute();
+
+        $result = [];
+        foreach ($generator as $key => $data) {
+            $result[$key] = $data;
+        }
 
         $timeAfter = microtime(true);
         $memoryAfter = memory_get_peak_usage(true);
@@ -412,7 +417,7 @@ class PerformanceBenchmark
             $memoryBefore = memory_get_usage(true);
             $timeBefore = microtime(true);
 
-            $result = (new MapReduceBuilder())
+            $generator = (new MapReduceBuilder())
                 ->input($data)
                 ->map($mapper)
                 ->reduce($reducer)
@@ -422,6 +427,11 @@ class PerformanceBenchmark
                 ->workingDirectory($this->tempDir . "/buffer_test_{$bufferSize}")
                 ->execute();
 
+            $result = [];
+            foreach ($generator as $key => $data) {
+                $result[$key] = $data;
+            }
+            
             $timeAfter = microtime(true);
             $memoryAfter = memory_get_peak_usage(true);
 

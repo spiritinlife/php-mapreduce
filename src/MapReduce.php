@@ -88,7 +88,7 @@ class MapReduce
      * @param callable $mapper Function(mixed $key, mixed $value): iterable<array{0: mixed, 1: mixed}>
      * @param callable $reducer Function(mixed $key, array<int, mixed> $values): mixed
      * @param int|null $reducePartitions Number of reduce partitions (default: same as concurrency)
-     * @return array<string, array{key: mixed, value: mixed}> Final results keyed by reduce keys
+     * @return \Generator<string, array{key: mixed, value: mixed}> Generator yielding final results keyed by reduce keys
      * @throws \RuntimeException If execution fails
      */
     public function execute(
@@ -96,7 +96,7 @@ class MapReduce
         callable $mapper,
         callable $reducer,
         ?int $reducePartitions = null
-    ): array {
+    ): \Generator {
         $reducePartitions = $reducePartitions ?? $this->concurrency;
 
         if ($reducePartitions < 1) {
@@ -113,7 +113,8 @@ class MapReduce
             // Phase 3: Reduce - aggregate values for each key
             $results = $this->reducer->reduce($shuffledFiles, $reducer);
 
-            return $results;
+            // Yield results from the generator
+            yield from $results;
         } finally {
             // Always cleanup temporary files
             $this->cleanup();

@@ -12,6 +12,21 @@ use Spiritinlife\MapReduce\MapReduceBuilder;
  */
 class IntegrationTest extends TestCase
 {
+    /**
+     * Convert generator results to array for easier testing
+     *
+     * @param \Generator $generator Generator from execute()
+     * @return array<string, array{key: mixed, value: mixed}>
+     */
+    private function generatorToArray(\Generator $generator): array
+    {
+        $result = [];
+        foreach ($generator as $key => $data) {
+            $result[$key] = $data;
+        }
+        return $result;
+    }
+
     public function testInvertedIndexBuild(): void
     {
         $documents = [
@@ -20,7 +35,7 @@ class IntegrationTest extends TestCase
             ['id' => 3, 'text' => 'quick brown foxes are clever animals'],
         ];
 
-        $invertedIndex = (new MapReduceBuilder())
+        $invertedIndex = $this->generatorToArray((new MapReduceBuilder())
             ->input($documents)
             ->map(function ($doc) {
                 $words = array_unique(str_word_count(strtolower($doc['text']), 1));
@@ -35,7 +50,7 @@ class IntegrationTest extends TestCase
                 ];
             })
             ->concurrent(2)
-            ->execute();
+            ->execute());
 
         // 'the' appears in documents 1 and 2 (not in document 3)
         $this->assertCount(2, $invertedIndex['the']['value']['document_ids']);
@@ -64,7 +79,7 @@ class IntegrationTest extends TestCase
             '192.168.1.1 - - [01/Jan/2024:10:00:04] "GET /index.html" 200 1024',
         ];
 
-        $stats = (new MapReduceBuilder())
+        $stats = $this->generatorToArray((new MapReduceBuilder())
             ->input($logLines)
             ->map(function ($line) {
                 if (preg_match('/(\S+) .*?"(\S+) (\S+).*?" (\d+) (\d+)/', $line, $m)) {
@@ -89,7 +104,7 @@ class IntegrationTest extends TestCase
                 return $result;
             })
             ->concurrent(2)
-            ->execute();
+            ->execute());
 
         // IP 192.168.1.1 made 3 requests
         $this->assertEquals(3, $stats['ip:192.168.1.1']['value']['requests']);
@@ -123,7 +138,7 @@ class IntegrationTest extends TestCase
             $combined[] = ['type' => 'order', 'data' => $order];
         }
 
-        $joined = (new MapReduceBuilder())
+        $joined = $this->generatorToArray((new MapReduceBuilder())
             ->input($combined)
             ->map(function ($record) {
                 if ($record['type'] === 'user') {
@@ -151,7 +166,7 @@ class IntegrationTest extends TestCase
                     'total_spent' => array_sum(array_column($orders, 'amount')),
                 ];
             })
-            ->execute();
+            ->execute());
 
         // Find Alice and Bob in the results (order may vary due to partitioning)
         $alice = null;
@@ -189,7 +204,7 @@ class IntegrationTest extends TestCase
             ['date' => '2024-01-03', 'category' => 'Transport', 'amount' => 25],
         ];
 
-        $dailyStats = (new MapReduceBuilder())
+        $dailyStats = $this->generatorToArray((new MapReduceBuilder())
             ->input($transactions)
             ->map(function ($transaction) {
                 yield [$transaction['date'], $transaction['amount']];
@@ -206,7 +221,7 @@ class IntegrationTest extends TestCase
                 ];
             })
             ->concurrent(2)
-            ->execute();
+            ->execute());
 
         $day1 = $dailyStats['2024-01-01']['value'];
         $this->assertEquals(70, $day1['total']);
@@ -227,7 +242,7 @@ class IntegrationTest extends TestCase
                 str_repeat('fox ', 2) .
                 str_repeat('jumps ', 1);
 
-        $wordCounts = (new MapReduceBuilder())
+        $wordCounts = $this->generatorToArray((new MapReduceBuilder())
             ->input(['doc' => $text])
             ->map(function ($text) {
                 foreach (str_word_count(strtolower($text), 1) as $word) {
@@ -237,7 +252,7 @@ class IntegrationTest extends TestCase
             ->reduce(function ($word, $counts) {
                 return array_sum($counts);
             })
-            ->execute();
+            ->execute());
 
         // Extract and sort by count
         $sorted = [];
@@ -261,7 +276,7 @@ class IntegrationTest extends TestCase
             'user4' => ['A', 'B'],
         ];
 
-        $cooccurrences = (new MapReduceBuilder())
+        $cooccurrences = $this->generatorToArray((new MapReduceBuilder())
             ->input($users)
             ->map(function ($items) {
                 // Emit all pairs of items this user interacted with
@@ -277,7 +292,7 @@ class IntegrationTest extends TestCase
             ->reduce(function ($pair, $counts) {
                 return array_sum($counts);
             })
-            ->execute();
+            ->execute());
 
         // A and B co-occurred in user1 and user4 = 2 times
         $this->assertEquals(2, $cooccurrences['A,B']['value']);
@@ -302,7 +317,7 @@ class IntegrationTest extends TestCase
 
         $startTime = microtime(true);
 
-        $result = (new MapReduceBuilder())
+        $result = $this->generatorToArray((new MapReduceBuilder())
             ->input($records)
             ->map(function ($record) {
                 yield [$record['category'], $record['value']];
@@ -315,7 +330,7 @@ class IntegrationTest extends TestCase
             })
             ->concurrent(8)
             ->partitions(16)
-            ->execute();
+            ->execute());
 
         $duration = microtime(true) - $startTime;
 

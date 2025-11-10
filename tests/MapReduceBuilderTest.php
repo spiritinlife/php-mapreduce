@@ -39,6 +39,21 @@ class MapReduceBuilderTest extends TestCase
         rmdir($dir);
     }
 
+    /**
+     * Convert generator results to array for easier testing
+     *
+     * @param \Generator $generator Generator from execute()
+     * @return array<string, array{key: mixed, value: mixed}>
+     */
+    private function generatorToArray(\Generator $generator): array
+    {
+        $result = [];
+        foreach ($generator as $key => $data) {
+            $result[$key] = $data;
+        }
+        return $result;
+    }
+
     public function testFluentInterface(): void
     {
         $builder = new MapReduceBuilder();
@@ -56,11 +71,11 @@ class MapReduceBuilderTest extends TestCase
 
     public function testInputConfiguration(): void
     {
-        $result = (new MapReduceBuilder())
+        $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(['a' => 1, 'b' => 2])
             ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
-            ->execute();
+            ->execute());
 
         $this->assertCount(2, $result);
         // Find values in results
@@ -74,36 +89,36 @@ class MapReduceBuilderTest extends TestCase
 
     public function testConcurrentConfiguration(): void
     {
-        $result = (new MapReduceBuilder())
+        $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(range(1, 10))
             ->map(fn($v) => yield ['sum', $v])
             ->reduce(fn($k, $v) => array_sum($v))
             ->concurrent(2) // 2 workers
-            ->execute();
+            ->execute());
 
         $this->assertEquals(55, $result['sum']['value']); // Sum of 1..10
     }
 
     public function testPartitionsConfiguration(): void
     {
-        $result = (new MapReduceBuilder())
+        $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(['a' => 1, 'b' => 2, 'c' => 3])
             ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->partitions(4) // 4 reduce partitions
-            ->execute();
+            ->execute());
 
         $this->assertCount(3, $result);
     }
 
     public function testChunkSizeConfiguration(): void
     {
-        $result = (new MapReduceBuilder())
+        $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(range(1, 100))
             ->map(fn($v) => yield ['total', $v])
             ->reduce(fn($k, $v) => array_sum($v))
             ->chunkSize(10) // Small chunks
-            ->execute();
+            ->execute());
 
         $this->assertEquals(5050, $result['total']['value']); // Sum of 1..100
     }
@@ -112,15 +127,15 @@ class MapReduceBuilderTest extends TestCase
     {
         $customDir = $this->tempDir . '/custom_work';
 
-        $result = (new MapReduceBuilder())
+        $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(['x' => 1])
             ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
             ->workingDirectory($customDir)
-            ->execute();
+            ->execute());
 
-        $this->assertEquals(1, $result[0]['key']);
-        $this->assertEquals(1, $result[0]['value']);
+        $this->assertEquals(1, $result[1]['key']);
+        $this->assertEquals(1, $result[1]['value']);
         // Directory should be cleaned up after execution
         $this->assertDirectoryDoesNotExist($customDir);
     }
@@ -128,7 +143,7 @@ class MapReduceBuilderTest extends TestCase
     public function testPartitionByConfiguration(): void
     {
         // Custom partitioner that groups by first letter
-        $result = (new MapReduceBuilder())
+        $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(['apple', 'apricot', 'banana', 'blueberry'])
             ->map(fn($word) => yield [$word, strlen($word)])
             ->partitionBy(function ($word, $numPartitions) {
@@ -136,7 +151,7 @@ class MapReduceBuilderTest extends TestCase
             })
             ->reduce(fn($word, $lengths) => $lengths[0])
             ->partitions(3)
-            ->execute();
+            ->execute());
 
         $this->assertEquals(5, $result['apple']['value']);
         $this->assertEquals(6, $result['banana']['value']);
@@ -147,10 +162,10 @@ class MapReduceBuilderTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Input data is required');
 
-        (new MapReduceBuilder())
+        $this->generatorToArray((new MapReduceBuilder())
             ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v)
-            ->execute();
+            ->execute());
     }
 
     public function testMissingMapperThrowsException(): void
@@ -158,10 +173,10 @@ class MapReduceBuilderTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Mapper function is required');
 
-        (new MapReduceBuilder())
+        $this->generatorToArray((new MapReduceBuilder())
             ->input([1, 2, 3])
             ->reduce(fn($k, $v) => $v)
-            ->execute();
+            ->execute());
     }
 
     public function testMissingReducerThrowsException(): void
@@ -169,10 +184,10 @@ class MapReduceBuilderTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Reducer function is required');
 
-        (new MapReduceBuilder())
+       $this->generatorToArray((new MapReduceBuilder())
             ->input([1, 2, 3])
             ->map(fn($v) => yield [$v, $v])
-            ->execute();
+            ->execute());
     }
 
     public function testInvalidConcurrencyThrowsException(): void
@@ -180,7 +195,7 @@ class MapReduceBuilderTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Concurrency must be at least 1');
 
-        (new MapReduceBuilder())
+       (new MapReduceBuilder())
             ->concurrent(0);
     }
 
@@ -189,7 +204,7 @@ class MapReduceBuilderTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Partitions must be at least 1');
 
-        (new MapReduceBuilder())
+       (new MapReduceBuilder())
             ->partitions(0);
     }
 
@@ -198,14 +213,14 @@ class MapReduceBuilderTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Chunk size must be at least 1');
 
-        (new MapReduceBuilder())
+       (new MapReduceBuilder())
             ->chunkSize(0);
     }
 
     public function testCompleteWorkflow(): void
     {
         // Test a complete workflow with all configuration options
-        $result = (new MapReduceBuilder())
+        $result = $this->generatorToArray((new MapReduceBuilder())
             ->input([
                 'doc1' => 'the quick brown fox',
                 'doc2' => 'the lazy dog',
@@ -224,7 +239,7 @@ class MapReduceBuilderTest extends TestCase
             ->partitions(4)
             ->chunkSize(100)
             ->workingDirectory($this->tempDir . '/complete')
-            ->execute();
+            ->execute());
 
         // Verify word counts
         $this->assertEquals(2, $result['the']['value']);
@@ -239,11 +254,11 @@ class MapReduceBuilderTest extends TestCase
     public function testDefaultConfiguration(): void
     {
         // Test with minimal configuration (using defaults)
-        $result = (new MapReduceBuilder())
+        $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(['a' => 1, 'b' => 2])
             ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
-            ->execute();
+            ->execute());
 
         $this->assertCount(2, $result);
     }
@@ -257,11 +272,11 @@ class MapReduceBuilderTest extends TestCase
             yield 'z' => 30;
         };
 
-        $result = (new MapReduceBuilder())
+        $result = $this->generatorToArray((new MapReduceBuilder())
             ->input($generator())
             ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v[0])
-            ->execute();
+            ->execute());
 
         $this->assertCount(3, $result);
         $found = [];
@@ -275,11 +290,11 @@ class MapReduceBuilderTest extends TestCase
 
     public function testEmptyInput(): void
     {
-        $result = (new MapReduceBuilder())
+        $result = $this->generatorToArray((new MapReduceBuilder())
             ->input([])
             ->map(fn($v) => yield [$v, $v])
             ->reduce(fn($k, $v) => $v)
-            ->execute();
+            ->execute());
 
         $this->assertEmpty($result);
     }
@@ -287,16 +302,16 @@ class MapReduceBuilderTest extends TestCase
     public function testMethodChainingOrder(): void
     {
         // Test that methods can be called in any order
-        $result = (new MapReduceBuilder())
+        $result = $this->generatorToArray((new MapReduceBuilder())
             ->concurrent(2)
             ->partitions(4)
             ->input(['a' => 1])
             ->chunkSize(100)
             ->reduce(fn($k, $v) => $v[0])
             ->map(fn($v) => yield [$v, $v])
-            ->execute();
+            ->execute());
 
-        $this->assertEquals(1, $result[0]['key']);
-        $this->assertEquals(1, $result[0]['value']);
+        $this->assertEquals(1, $result[1]['key']);
+        $this->assertEquals(1, $result[1]['value']);
     }
 }

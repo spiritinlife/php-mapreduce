@@ -40,6 +40,21 @@ class ReducerTest extends TestCase
     }
 
     /**
+     * Convert generator results to array for easier testing
+     *
+     * @param \Generator $generator Generator from reduce()
+     * @return array<string, array{key: mixed, value: mixed}>
+     */
+    private function generatorToArray(\Generator $generator): array
+    {
+        $result = [];
+        foreach ($generator as $key => $data) {
+            $result[$key] = $data;
+        }
+        return $result;
+    }
+
+    /**
      * @param array<string, array<int, mixed>> $groups
      */
     private function createShuffledFile(string $filename, array $groups): void
@@ -73,10 +88,10 @@ class ReducerTest extends TestCase
             'cherry' => [6],
         ]);
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [$file1, $file2],
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         $this->assertEquals(6, $results['apple']['value']); // 1+2+3
         $this->assertEquals(9, $results['banana']['value']); // 4+5
@@ -87,10 +102,10 @@ class ReducerTest extends TestCase
     {
         $reducer = new Reducer();
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [],
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         $this->assertEmpty($results);
     }
@@ -105,10 +120,10 @@ class ReducerTest extends TestCase
             'word2' => [2, 2],
         ]);
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [$file],
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         $this->assertEquals(3, $results['word1']['value']);
         $this->assertEquals(4, $results['word2']['value']);
@@ -125,10 +140,10 @@ class ReducerTest extends TestCase
             'key' => [1, 2, 3]
         ]);
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [$file1, $file2],
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         // Should handle non-existent file gracefully
         $this->assertEquals(6, $results['key']['value']);
@@ -144,7 +159,7 @@ class ReducerTest extends TestCase
             'category2' => [50, 75],
         ]);
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [$file],
             function ($key, $values) {
                 return [
@@ -155,7 +170,7 @@ class ReducerTest extends TestCase
                     'min' => min($values),
                 ];
             }
-        );
+        ));
 
         $cat1 = $results['category1']['value'];
         $this->assertEquals(450, $cat1['sum']);
@@ -180,10 +195,10 @@ class ReducerTest extends TestCase
             '20' => [4, 5],
         ]);
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [$file],
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         // Check results by the original key
         $found10 = false;
@@ -223,10 +238,10 @@ class ReducerTest extends TestCase
             fclose($handle);
         }
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [$file],
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         // Float keys are converted to strings in serialization
         $found15 = false;
@@ -272,10 +287,10 @@ class ReducerTest extends TestCase
             fclose($handle);
         }
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [$file],
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         // Find results by comparing keys
         $found1 = false;
@@ -308,7 +323,7 @@ class ReducerTest extends TestCase
             'key2' => [3, 4],
         ]);
 
-        $reducer->reduce(
+        $this->generatorToArray($reducer->reduce(
             [$file],
             function ($key, $values) {
                 if ($key === 'key2') {
@@ -316,7 +331,7 @@ class ReducerTest extends TestCase
                 }
                 return array_sum($values);
             }
-        );
+        ));
     }
 
     public function testMultiplePartitions(): void
@@ -341,10 +356,10 @@ class ReducerTest extends TestCase
             'key_d' => [6, 7, 8],
         ]);
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [$file1, $file2, $file3],
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         $this->assertCount(4, $results);
         $this->assertEquals(3, $results['key_a']['value']);
@@ -367,10 +382,10 @@ class ReducerTest extends TestCase
             ]);
         }
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             $files,
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         // Should have 10 keys, each with sum of 1..10 = 55
         $this->assertCount(10, $results);
@@ -388,10 +403,10 @@ class ReducerTest extends TestCase
             'test_key' => [1, 2, 3]
         ]);
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [$file],
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         // Verify result structure
         $this->assertArrayHasKey('test_key', $results);
@@ -422,10 +437,10 @@ class ReducerTest extends TestCase
             fclose($handle);
         }
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [$file],
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         // Boolean keys get serialized as strings "1" and ""
         $foundTrue = false;
@@ -455,10 +470,10 @@ class ReducerTest extends TestCase
             'gamma' => [30],
         ]);
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [$file],
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         // String keys should be preserved
         $this->assertArrayHasKey('alpha', $results);
@@ -476,10 +491,10 @@ class ReducerTest extends TestCase
         $file = "{$this->tempDir}/empty_shuffled.tmp";
         touch($file); // Create empty file
 
-        $results = $reducer->reduce(
+        $results = $this->generatorToArray($reducer->reduce(
             [$file],
             fn($key, $values) => array_sum($values)
-        );
+        ));
 
         $this->assertEmpty($results);
     }

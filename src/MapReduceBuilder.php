@@ -208,10 +208,10 @@ class MapReduceBuilder
     /**
      * Execute the MapReduce job
      *
-     * @return array<string, array{key: mixed, value: mixed}> Final results keyed by reduce keys
+     * @return \Generator<string, array{key: mixed, value: mixed}> Generator yielding final results keyed by reduce keys
      * @throws \RuntimeException If required parameters are missing or execution fails
      */
-    public function execute(): array
+    public function execute(): \Generator
     {
         if ($this->input === null) {
             throw new \RuntimeException('Input data is required. Use ->input($data)');
@@ -236,7 +236,7 @@ class MapReduceBuilder
             $mapReduce->withPartitioner($this->partitioner);
         }
 
-        return $mapReduce->execute(
+        yield from $mapReduce->execute(
             $this->input,
             $this->mapper,
             $this->reducer,

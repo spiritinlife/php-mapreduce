@@ -51,4 +51,4 @@ foreach ($sorted as $word => $count) {
 }
 
 echo "\nExecution time: " . number_format($duration, 3) . " seconds\n";
-echo "Total unique words: " . count($wordCounts) . "\n";
+echo "Total unique words: " . count($sorted) . "\n";

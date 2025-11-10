@@ -46,7 +46,10 @@ $results = (new MapReduceBuilder())
     })
     ->execute();
 
-// Output: ['quick' => 2, 'brown' => 2, 'the' => 2, ...]
+// Results are streamed as a generator - iterate to process results
+foreach ($results as $word => $count) {
+    // Output: 'quick' => 2, 'brown' => 2, 'the' => 2, ...
+}
 ```
 
 ## How It Works
@@ -194,8 +197,8 @@ Define the aggregation function. Receives all values for each key.
 })
 ```
 
-#### `execute(): array`
-Run the job and return results as `['key' => ['key' => $k, 'value' => $v], ...]`
+#### `execute(): Generator`
+Run the job and return results as a generator
 
 ### Configuration Methods (Optional)
 
@@ -289,6 +292,10 @@ $totals = (new MapReduceBuilder())
         'count' => count($amounts),
     ])
     ->execute();
+
+foreach ($totals as $product => $stats) {
+    echo "{$product}: {$stats['total']}\n";
+}
 ```
 
 ### Building an Inverted Index
@@ -312,6 +319,10 @@ $invertedIndex = (new MapReduceBuilder())
         'frequency' => count($docIds),
     ])
     ->execute();
+
+foreach ($invertedIndex as $word => $index) {
+    echo "{$word}: appears in {$index['frequency']} documents\n";
+}
 ```
 
 ### Log Analysis
@@ -328,6 +339,10 @@ $stats = (new MapReduceBuilder())
     ->reduce(fn($key, $counts) => array_sum($counts))
     ->concurrent(8)
     ->execute();
+
+foreach ($stats as $key => $count) {
+    echo "{$key}: {$count}\n";
+}
 ```
 
 ## Performance Tuning

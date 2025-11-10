@@ -24,9 +24,9 @@ class Reducer
      *
      * @param array<int, string> $shuffledFiles List of shuffled files to process
      * @param callable $reducer Reducer function
-     * @return array<string, array{key: mixed, value: mixed}> Final results
+     * @return \Generator<string, array{key: mixed, value: mixed}> Generator yielding final results
      */
-    public function reduce(array $shuffledFiles, callable $reducer): array
+    public function reduce(array $shuffledFiles, callable $reducer): \Generator
     {
         $futures = [];
 
@@ -38,13 +38,12 @@ class Reducer
 
         $results = await($futures);
 
-        // Merge all partition results
-        $merged = [];
+        // Yield results from all partitions
         foreach ($results as $partition) {
-            $merged = array_merge($merged, $partition);
+            foreach ($partition as $key => $data) {
+                yield $key => $data;
+            }
         }
-
-        return $merged;
     }
 
     /**

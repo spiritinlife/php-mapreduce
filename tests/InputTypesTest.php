@@ -42,13 +42,30 @@ class InputTypesTest extends TestCase
         rmdir($dir);
     }
 
+    /**
+     * Convert generator results to array for easier testing
+     *
+     * @param \Generator $generator Generator from execute()
+     * @return array<string, array{key: mixed, value: mixed}>
+     */
+    private function generatorToArray(\Generator $generator): array
+    {
+        $result = [];
+        foreach ($generator as $key => $data) {
+            $result[$key] = $data;
+        }
+        return $result;
+    }
+
     public function testArrayInput(): void
     {
-        $result = (new MapReduceBuilder())
-            ->input(['a', 'b', 'c'])
-            ->map(fn($v) => yield [$v, 1])
-            ->reduce(fn($k, $v) => array_sum($v))
-            ->execute();
+        $result = $this->generatorToArray(
+            (new MapReduceBuilder())
+                ->input(['a', 'b', 'c'])
+                ->map(fn($v) => yield [$v, 1])
+                ->reduce(fn($k, $v) => array_sum($v))
+                ->execute()
+        );
 
         $this->assertCount(3, $result);
     }
@@ -57,11 +74,13 @@ class InputTypesTest extends TestCase
     {
         $data = ['x' => 10, 'y' => 20];
 
-        $result = (new MapReduceBuilder())
-            ->input(new \ArrayIterator($data))
-            ->map(fn($v) => yield [$v, $v])
-            ->reduce(fn($k, $v) => $v[0])
-            ->execute();
+        $result = $this->generatorToArray(            
+            (new MapReduceBuilder())
+                ->input(new \ArrayIterator($data))
+                ->map(fn($v) => yield [$v, $v])
+                ->reduce(fn($k, $v) => $v[0])
+                ->execute()
+        );
 
         $found = [];
         foreach ($result as $data) {
@@ -79,11 +98,13 @@ class InputTypesTest extends TestCase
             yield 'c' => 3;
         };
 
-        $result = (new MapReduceBuilder())
-            ->input($generator())
-            ->map(fn($v) => yield ['sum', $v])
-            ->reduce(fn($k, $v) => array_sum($v))
-            ->execute();
+        $result = $this->generatorToArray(
+            (new MapReduceBuilder())
+                ->input($generator())
+                ->map(fn($v) => yield ['sum', $v])
+                ->reduce(fn($k, $v) => array_sum($v))
+                ->execute()
+            );
 
         $this->assertEquals(6, $result['sum']['value']);
     }
@@ -93,16 +114,18 @@ class InputTypesTest extends TestCase
         $file = "{$this->tempDir}/data.txt";
         file_put_contents($file, "line1\nline2\nline3");
 
-        $result = (new MapReduceBuilder())
-            ->input(new \SplFileObject($file))
-            ->map(function ($line) {
-                $line = trim($line);
-                if (!empty($line)) {
-                    yield ['count', 1];
-                }
-            })
-            ->reduce(fn($k, $v) => array_sum($v))
-            ->execute();
+        $result = $this->generatorToArray(
+            (new MapReduceBuilder())
+                ->input(new \SplFileObject($file))
+                ->map(function ($line) {
+                    $line = trim($line);
+                    if (!empty($line)) {
+                        yield ['count', 1];
+                    }
+                })
+                ->reduce(fn($k, $v) => array_sum($v))
+                ->execute()
+            );
 
         $this->assertEquals(3, $result['count']['value']);
     }
@@ -124,11 +147,13 @@ class InputTypesTest extends TestCase
             fclose($handle);
         };
 
-        $result = (new MapReduceBuilder())
-            ->input($csvGenerator())
-            ->map(fn($row) => yield [$row['name'], $row['value']])
-            ->reduce(fn($k, $v) => $v[0])
-            ->execute();
+        $result = $this->generatorToArray(
+            (new MapReduceBuilder())
+                ->input($csvGenerator())
+                ->map(fn($row) => yield [$row['name'], $row['value']])
+                ->reduce(fn($k, $v) => $v[0])
+                ->execute()
+            );
 
         $this->assertEquals(100, $result['Alice']['value']);
         $this->assertEquals(200, $result['Bob']['value']);
@@ -151,11 +176,13 @@ class InputTypesTest extends TestCase
             fclose($handle);
         };
 
-        $result = (new MapReduceBuilder())
-            ->input($jsonlGenerator())
-            ->map(fn($row) => yield [$row['name'], $row['id']])
-            ->reduce(fn($k, $v) => $v[0])
-            ->execute();
+        $result = $this->generatorToArray(
+            (new MapReduceBuilder())
+                ->input($jsonlGenerator())
+                ->map(fn($row) => yield [$row['name'], $row['id']])
+                ->reduce(fn($k, $v) => $v[0])
+                ->execute()
+        );
 
         $this->assertEquals(1, $result['Alice']['value']);
         $this->assertEquals(2, $result['Bob']['value']);
@@ -180,11 +207,13 @@ class InputTypesTest extends TestCase
             }
         };
 
-        $result = (new MapReduceBuilder())
-            ->input($fileGenerator())
-            ->map(fn($path) => yield ['count', 1])
-            ->reduce(fn($k, $v) => array_sum($v))
-            ->execute();
+        $result = $this->generatorToArray(
+            (new MapReduceBuilder())
+                ->input($fileGenerator())
+                ->map(fn($path) => yield ['count', 1])
+                ->reduce(fn($k, $v) => array_sum($v))
+                ->execute()
+            );
 
         $this->assertEquals(2, $result['count']['value']);
     }
