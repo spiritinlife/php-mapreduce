@@ -24,6 +24,7 @@ class Mapper
     protected int $bufferSize;
     protected int $mapperBatchSize;
     protected ?string $autoloadPath;
+    protected ?Pool $workerPool;
 
     /**
      * Create a new Mapper instance
@@ -49,6 +50,25 @@ class Mapper
         $this->bufferSize = $bufferSize;
         $this->mapperBatchSize = $mapperBatchSize;
         $this->autoloadPath = $autoloadPath;
+        // use getWorkerPool to access and late initialise once
+        $this->workerPool = null;
+    }
+
+    // Lazy instatiates the worker pool 
+    // This is the safest way as if we have one mapreduce passing its results
+    // to the second mapreduce we can end up instatiating two workers Pools which
+    // leads to issues
+    private function getWorkerPool(): Pool
+    {
+        if ($this->workerPool === null) {
+            $this->workerPool = Pool::create()->concurrency($this->concurrency);
+            // Configure autoload if provided
+            if ($this->autoloadPath !== null) {
+                $this->workerPool->autoload($this->autoloadPath);
+            }
+        }
+
+        return $this->workerPool;
     }
 
     /**
@@ -62,14 +82,6 @@ class Mapper
      */
     public function map(iterable $input, callable $mapper, int $reducePartitions, $context = null): array
     {
-        // Create pool with specified concurrency
-        $pool = Pool::create()->concurrency($this->concurrency);
-
-        // Configure autoload if provided
-        if ($this->autoloadPath !== null) {
-            $pool->autoload($this->autoloadPath);
-        }
-
         $chunk = [];
         $chunkIndex = 0;
 
@@ -77,6 +89,7 @@ class Mapper
         $workingDir = $this->workingDir;
         $bufferSize = $this->bufferSize;
         $partitioner = $this->partitioner;
+
 
         // Stream chunks to workers as they arrive
         foreach ($input as $item) {
@@ -87,7 +100,7 @@ class Mapper
                 $chunkCopy = $chunk;
                 $currentChunkIndex = $chunkIndex;
 
-                $pool->add(function () use ($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner, $context) {
+                $this->getWorkerPool()->add(function () use ($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner, $context) {
                     return self::processChunk($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner, $context);
                 });
 
@@ -101,13 +114,13 @@ class Mapper
             $chunkCopy = $chunk;
             $currentChunkIndex = $chunkIndex;
 
-            $pool->add(function () use ($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner, $context) {
+            $this->getWorkerPool()->add(function () use ($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner, $context) {
                 return self::processChunk($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner, $context);
             });
         }
 
         // Wait for all tasks to complete and collect results
-        $workerResults = $pool->wait();
+        $workerResults = $this->getWorkerPool()->wait();
 
         // Aggregate results by partition
         $mapOutputFiles = array_fill(0, $reducePartitions, []);
@@ -117,7 +130,6 @@ class Mapper
                 $mapOutputFiles[$partition][] = $file;
             }
         }
-        
         return $mapOutputFiles;
     }
 

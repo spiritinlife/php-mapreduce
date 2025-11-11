@@ -56,56 +56,93 @@ $salesByProduct = (new MapReduceBuilder())
 
 $duration = microtime(true) - $startTime;
 
-echo "Sales by Product:\n";
-echo "================\n";
-foreach ($salesByProduct as $data) {
-    $product = $data['key'];
-    $stats = $data['value'];
+echo "First stage execution time: " . number_format($duration, 3) . " seconds\n";
 
-    echo "Product: {$product}\n";
-    echo "  Total Sales: $" . number_format($stats['total']) . "\n";
-    echo "  Orders: {$stats['count']}\n";
-    echo "  Average: $" . number_format($stats['average'], 2) . "\n";
-    echo "  Range: $" . number_format($stats['min']) . " - $" . number_format($stats['max']) . "\n";
-    echo "\n";
-}
+// Stage 2: Use results from first MapReduce as input to second MapReduce
+// Feed the generator directly into the second MapReduce
+echo "\n=== Stage 2: Categorize Products by Performance Tier ===\n";
 
-echo "Execution time: " . number_format($duration, 3) . " seconds\n";
+$startTime2 = microtime(true);
 
-// Now analyze by region
-echo "\n=== Sales by Region ===\n";
+// Second MapReduce: Categorize by performance tier
+// Takes the generator from first stage directly as input (PROBLEMATIC!)
+$tierAnalysis = (new MapReduceBuilder())
+    ->input($salesByProduct)
+    ->map(function ($data, $context) {
+        // Input is the result from first MapReduce: ['key' => product, 'value' => stats]
+        $product = $data['key'];
+        $stats = $data['value'];
+        $total = $stats['total'];
 
-$salesByRegion = (new MapReduceBuilder())
-    ->input($sales)
-    ->map(function ($sale, $context) {
-        yield [$sale['region'], $sale['amount']];
+        // Categorize based on total sales
+        if ($total >= 400) {
+            $tier = 'High Performer';
+        } elseif ($total >= 200) {
+            $tier = 'Medium Performer';
+        } else {
+            $tier = 'Low Performer';
+        }
+
+        yield [$tier, [
+            'product' => $product,
+            'total_sales' => $total,
+            'order_count' => $stats['count'],
+        ]];
     })
-    ->reduce(function ($region, $amountsIterator, $context) {
-        // Use accumulator pattern to calculate statistics
-        $total = 0;
-        $count = 0;
+    ->reduce(function ($tier, $productsIterator, $context) {
+        // Collect all products in this tier
+        $products = [];
+        $tierTotalSales = 0;
+        $tierTotalOrders = 0;
 
-        foreach ($amountsIterator as $amount) {
-            $total += $amount;
-            $count++;
+        foreach ($productsIterator as $product) {
+            $products[] = $product;
+            $tierTotalSales += $product['total_sales'];
+            $tierTotalOrders += $product['order_count'];
         }
 
         return [
-            'total' => $total,
-            'count' => $count,
-            'average' => $count > 0 ? $total / $count : 0,
+            'products' => $products,
+            'product_count' => count($products),
+            'tier_total_sales' => $tierTotalSales,
+            'tier_total_orders' => $tierTotalOrders,
+            'tier_average_per_product' => count($products) > 0 ? $tierTotalSales / count($products) : 0,
         ];
     })
-    ->concurrent(4)
+    ->concurrent(2)
     ->execute();
 
-foreach ($salesByRegion as $data) {
-    $region = $data['key'];
-    $stats = $data['value'];
+$duration2 = microtime(true) - $startTime2;
 
-    echo "Region: {$region}\n";
-    echo "  Total Sales: $" . number_format($stats['total']) . "\n";
-    echo "  Orders: {$stats['count']}\n";
-    echo "  Average: $" . number_format($stats['average'], 2) . "\n";
-    echo "\n";
+// Define tier display order
+$tierOrder = ['High Performer', 'Medium Performer', 'Low Performer'];
+$tierResults = [];
+
+// Collect results by tier
+foreach ($tierAnalysis as $data) {
+    $tierResults[$data['key']] = $data['value'];
 }
+
+echo "Performance Tiers:\n";
+echo "==================\n";
+
+// Display in order
+foreach ($tierOrder as $tier) {
+    if (!isset($tierResults[$tier])) {
+        continue;
+    }
+
+    $stats = $tierResults[$tier];
+    echo "\n{$tier}:\n";
+    echo "  Number of products: {$stats['product_count']}\n";
+    echo "  Tier total sales: $" . number_format($stats['tier_total_sales']) . "\n";
+    echo "  Tier total orders: {$stats['tier_total_orders']}\n";
+    echo "  Average per product: $" . number_format($stats['tier_average_per_product'], 2) . "\n";
+    echo "  Products:\n";
+    foreach ($stats['products'] as $product) {
+        echo "    - {$product['product']}: $" . number_format($product['total_sales']) . " ({$product['order_count']} orders)\n";
+    }
+}
+
+echo "\nSecond stage execution time: " . number_format($duration2, 3) . " seconds\n";
+echo "Total pipeline execution time: " . number_format($duration + $duration2, 3) . " seconds\n";
