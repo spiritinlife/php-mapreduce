@@ -66,12 +66,22 @@ function runBenchmark(int $recordCount, int $concurrency): array
 
         $generator = (new MapReduceBuilder())
             ->input(generateData($recordCount))
-            ->map(fn($record) => yield [$record['category'], $record['value']])
-            ->reduce(fn($category, $values) => [
-                'sum' => array_sum($values),
-                'count' => count($values),
-                'avg' => array_sum($values) / count($values),
-            ])
+            ->map(fn($record, $context) => yield [$record['category'], $record['value']])
+            ->reduce(function ($category, $valuesIterator, $context) {
+                $sum = 0;
+                $count = 0;
+
+                foreach ($valuesIterator as $value) {
+                    $sum += $value;
+                    $count++;
+                }
+
+                return [
+                    'sum' => $sum,
+                    'count' => $count,
+                    'avg' => $count > 0 ? $sum / $count : 0,
+                ];
+            })
             ->concurrent($concurrency)
             ->partitions($concurrency)
             ->mapperBatchSize($mapperBatchSize)

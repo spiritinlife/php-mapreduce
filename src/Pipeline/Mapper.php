@@ -111,12 +111,13 @@ class Mapper
 
         // Aggregate results by partition
         $mapOutputFiles = array_fill(0, $reducePartitions, []);
+
         foreach ($workerResults as $workerFiles) {
             foreach ($workerFiles as $partition => $file) {
                 $mapOutputFiles[$partition][] = $file;
             }
         }
-
+        
         return $mapOutputFiles;
     }
 
@@ -159,7 +160,7 @@ class Mapper
             // Process each item in the chunk
             foreach ($chunk as $value) {
                 // Call mapper with context as the second parameter
-                $intermediateResults = $context !== null ? $mapper($value, $context) : $mapper($value);
+                $intermediateResults = $mapper($value, $context);
 
                 if ($intermediateResults === null) {
                     continue;
@@ -175,7 +176,7 @@ class Mapper
                     }
 
                     [$intermediateKey, $intermediateValue] = $pair;
-                    $partition = self::getPartition($intermediateKey, $reducePartitions, $partitioner);
+                    $partition = self::getPartition($intermediateKey, $reducePartitions, $partitioner, $context);
 
                     $partitionWriters[$partition]->writeLine(serialize([
                         'key' => $intermediateKey,
@@ -207,12 +208,13 @@ class Mapper
      * @param mixed $key Key to partition
      * @param int $numPartitions Number of partitions
      * @param callable|null $partitioner Custom partitioner function
+     * @param mixed $context Optional context data passed to partitioner function
      * @return int Partition index (0 to numPartitions-1)
      */
-    protected static function getPartition($key, int $numPartitions, ?callable $partitioner = null): int
+    protected static function getPartition($key, int $numPartitions, ?callable $partitioner = null, $context = null): int
     {
         if ($partitioner) {
-            $partition = $partitioner($key, $numPartitions);
+            $partition = $partitioner($key, $numPartitions, $context);
 
             if (!is_int($partition) || $partition < 0 || $partition >= $numPartitions) {
                 throw new \RuntimeException(

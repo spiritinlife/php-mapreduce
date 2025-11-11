@@ -37,13 +37,13 @@ class IntegrationTest extends TestCase
 
         $invertedIndex = $this->generatorToArray((new MapReduceBuilder())
             ->input($documents)
-            ->map(function ($doc) {
+            ->map(function ($doc, $context) {
                 $words = array_unique(str_word_count(strtolower($doc['text']), 1));
                 foreach ($words as $word) {
                     yield [$word, $doc['id']];
                 }
             })
-            ->reduce(function ($word, $docIdsIterator) {
+            ->reduce(function ($word, $docIdsIterator, $context) {
                 $docIds = iterator_to_array($docIdsIterator);
                 return [
                     'document_ids' => array_unique($docIds),
@@ -82,7 +82,7 @@ class IntegrationTest extends TestCase
 
         $stats = $this->generatorToArray((new MapReduceBuilder())
             ->input($logLines)
-            ->map(function ($line) {
+            ->map(function ($line, $context) {
                 if (preg_match('/(\S+) .*?"(\S+) (\S+).*?" (\d+) (\d+)/', $line, $m)) {
                     $ip = $m[1];
                     $method = $m[2];
@@ -95,7 +95,7 @@ class IntegrationTest extends TestCase
                     yield ["path:$path", ['hits' => 1, 'bytes' => $bytes]];
                 }
             })
-            ->reduce(function ($key, $metricsIterator) {
+            ->reduce(function ($key, $metricsIterator, $context) {
                 $result = [];
                 foreach ($metricsIterator as $metric) {
                     foreach ($metric as $field => $value) {
@@ -141,14 +141,14 @@ class IntegrationTest extends TestCase
 
         $joined = $this->generatorToArray((new MapReduceBuilder())
             ->input($combined)
-            ->map(function ($record) {
+            ->map(function ($record, $context) {
                 if ($record['type'] === 'user') {
                     yield [$record['data']['user_id'], ['user' => $record['data']]];
                 } else {
                     yield [$record['data']['user_id'], ['order' => $record['data']]];
                 }
             })
-            ->reduce(function ($userId, $recordsIterator) {
+            ->reduce(function ($userId, $recordsIterator, $context) {
                 $user = null;
                 $orders = [];
 
@@ -207,10 +207,10 @@ class IntegrationTest extends TestCase
 
         $dailyStats = $this->generatorToArray((new MapReduceBuilder())
             ->input($transactions)
-            ->map(function ($transaction) {
+            ->map(function ($transaction, $context) {
                 yield [$transaction['date'], $transaction['amount']];
             })
-            ->reduce(function ($date, $amountsIterator) {
+            ->reduce(function ($date, $amountsIterator, $context) {
                 $amounts = iterator_to_array($amountsIterator);
                 sort($amounts);
                 return [
@@ -246,12 +246,12 @@ class IntegrationTest extends TestCase
 
         $wordCounts = $this->generatorToArray((new MapReduceBuilder())
             ->input(['doc' => $text])
-            ->map(function ($text) {
+            ->map(function ($text, $context) {
                 foreach (str_word_count(strtolower($text), 1) as $word) {
                     yield [$word, 1];
                 }
             })
-            ->reduce(function ($word, $countsIterator) {
+            ->reduce(function ($word, $countsIterator, $context) {
                 $sum = 0;
                 foreach ($countsIterator as $count) {
                     $sum += $count;
@@ -284,7 +284,7 @@ class IntegrationTest extends TestCase
 
         $cooccurrences = $this->generatorToArray((new MapReduceBuilder())
             ->input($users)
-            ->map(function ($items) {
+            ->map(function ($items, $context) {
                 // Emit all pairs of items this user interacted with
                 $count = count($items);
                 for ($i = 0; $i < $count; $i++) {
@@ -295,7 +295,7 @@ class IntegrationTest extends TestCase
                     }
                 }
             })
-            ->reduce(function ($pair, $countsIterator) {
+            ->reduce(function ($pair, $countsIterator, $context) {
                 $sum = 0;
                 foreach ($countsIterator as $count) {
                     $sum += $count;
@@ -321,13 +321,13 @@ class IntegrationTest extends TestCase
 
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input($records)
-            ->map(function ($record) {
+            ->map(function ($record, $context) {
                 // Each input yields the same key-value pair 10 times
                 for ($i = 0; $i < 10; $i++) {
                     yield ['total_buyers', 1];
                 }
             })
-            ->reduce(function ($key, $valuesIterator) {
+            ->reduce(function ($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -356,7 +356,7 @@ class IntegrationTest extends TestCase
 
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input($records)
-            ->map(function ($row) {
+            ->map(function ($row, $context) {
                 // Emit a unique key for each row
                 yield ["item_{$row['id']}", 1];
 
@@ -364,7 +364,7 @@ class IntegrationTest extends TestCase
                 // This key appears 20,000 times and should not be lost
                 yield ['total_count', 1];
             })
-            ->reduce(function ($key, $valuesIterator) {
+            ->reduce(function ($key, $valuesIterator, $context) {
                 return array_sum(iterator_to_array($valuesIterator));
             })
             ->concurrent(1)
@@ -395,10 +395,10 @@ class IntegrationTest extends TestCase
 
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input($records)
-            ->map(function ($record) {
+            ->map(function ($record, $context) {
                 yield [$record['category'], $record['value']];
             })
-            ->reduce(function ($category, $valuesIterator) {
+            ->reduce(function ($category, $valuesIterator, $context) {
                 $values = iterator_to_array($valuesIterator);
                 return [
                     'count' => count($values),

@@ -38,12 +38,19 @@ $results = (new MapReduceBuilder())
     })
     ->reduce(function ($key, $valuesIterator, $context) {
         // Context is also available in reducer
-        // Collect values into array for count and sum operations
-        $values = iterator_to_array($valuesIterator);
+        // Use accumulator pattern to count and sum
+        $count = 0;
+        $sum = 0;
+
+        foreach ($valuesIterator as $value) {
+            $count++;
+            $sum += $value;
+        }
+
         return [
             'category' => $key,
-            'count' => count($values),
-            'sum' => array_sum($values),
+            'count' => $count,
+            'sum' => $sum,
             'threshold_used' => $context['threshold']
         ];
     })
@@ -91,9 +98,15 @@ $recommendations = (new MapReduceBuilder())
         }
     })
     ->reduce(function ($product, $usersIterator, $context) {
-        // Collect users into array for unique and count operations
-        $users = iterator_to_array($usersIterator);
-        $uniqueUsers = array_unique($users);
+        // Use accumulator pattern to collect unique users
+        $uniqueUsers = [];
+
+        foreach ($usersIterator as $user) {
+            if (!in_array($user, $uniqueUsers, true)) {
+                $uniqueUsers[] = $user;
+            }
+        }
+
         $popularity = count($uniqueUsers) / $context['totalUsers'];
 
         return [
@@ -158,10 +171,14 @@ $analysis = (new MapReduceBuilder())
         ]];
     })
     ->reduce(function ($user, $eventsIterator, $context) {
-        // Collect events into array for array_column and count operations
-        $events = iterator_to_array($eventsIterator);
-        $totalWeight = array_sum(array_column($events, 'weight'));
-        $eventCount = count($events);
+        // Use accumulator pattern to sum weights and count events
+        $totalWeight = 0;
+        $eventCount = 0;
+
+        foreach ($eventsIterator as $event) {
+            $totalWeight += $event['weight'];
+            $eventCount++;
+        }
 
         return [
             'user' => $user,

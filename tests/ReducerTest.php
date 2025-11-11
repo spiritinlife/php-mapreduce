@@ -93,7 +93,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [$file1, $file2],
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -113,7 +113,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [],
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -137,7 +137,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [$file],
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -163,7 +163,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [$file1, $file2],
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -188,7 +188,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [$file],
-            function ($key, $valuesIterator) {
+            function ($key, $valuesIterator, $context) {
                 $values = iterator_to_array($valuesIterator);
                 return [
                     'sum' => array_sum($values),
@@ -225,7 +225,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [$file],
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -278,7 +278,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [$file],
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -337,7 +337,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [$file],
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -379,7 +379,7 @@ class ReducerTest extends TestCase
 
         $this->generatorToArray($reducer->reduce(
             [$file],
-            function ($key, $valuesIterator) {
+            function ($key, $valuesIterator, $context) {
                 if ($key === 'key2') {
                     throw new \RuntimeException('Test exception');
                 }
@@ -416,7 +416,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [$file1, $file2, $file3],
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -448,7 +448,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             $files,
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -475,7 +475,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [$file],
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -527,7 +527,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [$file],
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -566,7 +566,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [$file],
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;
@@ -593,7 +593,7 @@ class ReducerTest extends TestCase
 
         $results = $this->generatorToArray($reducer->reduce(
             [$file],
-            function($key, $valuesIterator) {
+            function($key, $valuesIterator, $context) {
                 $sum = 0;
                 foreach ($valuesIterator as $value) {
                     $sum += $value;

@@ -26,18 +26,29 @@ $startTime = microtime(true);
 // Analyze sales by product
 $salesByProduct = (new MapReduceBuilder())
     ->input($sales)
-    ->map(function ($sale) {
+    ->map(function ($sale, $context) {
         yield [$sale['product'], $sale['amount']];
     })
-    ->reduce(function ($product, $amountsIterator) {
-        // Collect amounts into array for statistics calculation
-        $amounts = iterator_to_array($amountsIterator);
+    ->reduce(function ($product, $amountsIterator, $context) {
+        // Use accumulator pattern to calculate statistics
+        $total = 0;
+        $count = 0;
+        $min = PHP_INT_MAX;
+        $max = PHP_INT_MIN;
+
+        foreach ($amountsIterator as $amount) {
+            $total += $amount;
+            $count++;
+            $min = min($min, $amount);
+            $max = max($max, $amount);
+        }
+
         return [
-            'total' => array_sum($amounts),
-            'count' => count($amounts),
-            'average' => array_sum($amounts) / count($amounts),
-            'min' => min($amounts),
-            'max' => max($amounts),
+            'total' => $total,
+            'count' => $count,
+            'average' => $count > 0 ? $total / $count : 0,
+            'min' => $min,
+            'max' => $max,
         ];
     })
     ->concurrent(4)
@@ -66,16 +77,23 @@ echo "\n=== Sales by Region ===\n";
 
 $salesByRegion = (new MapReduceBuilder())
     ->input($sales)
-    ->map(function ($sale) {
+    ->map(function ($sale, $context) {
         yield [$sale['region'], $sale['amount']];
     })
-    ->reduce(function ($region, $amountsIterator) {
-        // Collect amounts into array for statistics calculation
-        $amounts = iterator_to_array($amountsIterator);
+    ->reduce(function ($region, $amountsIterator, $context) {
+        // Use accumulator pattern to calculate statistics
+        $total = 0;
+        $count = 0;
+
+        foreach ($amountsIterator as $amount) {
+            $total += $amount;
+            $count++;
+        }
+
         return [
-            'total' => array_sum($amounts),
-            'count' => count($amounts),
-            'average' => array_sum($amounts) / count($amounts),
+            'total' => $total,
+            'count' => $count,
+            'average' => $count > 0 ? $total / $count : 0,
         ];
     })
     ->concurrent(4)

@@ -158,13 +158,19 @@ class PerformanceBenchmark
         echo "Dataset: {$dataSize} documents x 50 words\n";
         echo "========================================\n";
 
-        $mapper = function ($text) {
+        $mapper = function ($text, $context) {
             foreach (str_word_count(strtolower($text), 1) as $word) {
                 yield [$word, 1];
             }
         };
 
-        $reducer = fn($word, $counts) => array_sum($counts);
+        $reducer = function ($word, $countsIterator, $context) {
+            $sum = 0;
+            foreach ($countsIterator as $count) {
+                $sum += $count;
+            }
+            return $sum;
+        };
 
         $configurations = [
             ['concurrency' => 1, 'partitions' => 2],
@@ -209,17 +215,29 @@ class PerformanceBenchmark
         echo "Aggregation Performance Scaling Test\n";
         echo "========================================\n";
 
-        $mapper = function ($record) {
+        $mapper = function ($record, $context) {
             yield [$record['category'], $record['value']];
         };
 
-        $reducer = function ($category, $values) {
+        $reducer = function ($category, $valuesIterator, $context) {
+            $sum = 0;
+            $count = 0;
+            $max = PHP_INT_MIN;
+            $min = PHP_INT_MAX;
+
+            foreach ($valuesIterator as $value) {
+                $sum += $value;
+                $count++;
+                $max = max($max, $value);
+                $min = min($min, $value);
+            }
+
             return [
-                'sum' => array_sum($values),
-                'count' => count($values),
-                'avg' => array_sum($values) / count($values),
-                'max' => max($values),
-                'min' => min($values),
+                'sum' => $sum,
+                'count' => $count,
+                'avg' => $count > 0 ? $sum / $count : 0,
+                'max' => $max,
+                'min' => $min,
             ];
         };
 
@@ -270,8 +288,16 @@ class PerformanceBenchmark
         echo "Concurrency: Fixed at 4\n";
         echo "========================================\n";
 
-        $mapper = fn($record) => yield [$record['category'], $record['value']];
-        $reducer = fn($category, $values) => ['sum' => array_sum($values), 'count' => count($values)];
+        $mapper = fn($record, $context) => yield [$record['category'], $record['value']];
+        $reducer = function ($category, $valuesIterator, $context) {
+            $sum = 0;
+            $count = 0;
+            foreach ($valuesIterator as $value) {
+                $sum += $value;
+                $count++;
+            }
+            return ['sum' => $sum, 'count' => $count];
+        };
 
         $partitionCounts = [2, 4, 8, 16, 32];
         $results = [];
@@ -317,8 +343,14 @@ class PerformanceBenchmark
         echo "Partitions: Fixed at 8\n";
         echo "========================================\n";
 
-        $mapper = fn($record) => yield [$record['category'], $record['value']];
-        $reducer = fn($category, $values) => array_sum($values);
+        $mapper = fn($record, $context) => yield [$record['category'], $record['value']];
+        $reducer = function ($category, $valuesIterator, $context) {
+            $sum = 0;
+            foreach ($valuesIterator as $value) {
+                $sum += $value;
+            }
+            return $sum;
+        };
 
         $concurrencyLevels = [1, 2, 4, 8, 16];
         $results = [];
@@ -357,8 +389,14 @@ class PerformanceBenchmark
         echo "Dataset: {$dataSize} records\n";
         echo "========================================\n";
 
-        $mapper = fn($record) => yield [$record['category'], $record['value']];
-        $reducer = fn($category, $values) => array_sum($values);
+        $mapper = fn($record, $context) => yield [$record['category'], $record['value']];
+        $reducer = function ($category, $valuesIterator, $context) {
+            $sum = 0;
+            foreach ($valuesIterator as $value) {
+                $sum += $value;
+            }
+            return $sum;
+        };
 
         $configurations = [
             ['concurrency' => 1, 'partitions' => 2],
@@ -403,11 +441,16 @@ class PerformanceBenchmark
         echo "Fixed: Concurrency=4, Partitions=8\n";
         echo "========================================\n";
 
-        $mapper = fn($record) => yield [$record['category'], $record['value']];
-        $reducer = fn($category, $values) => [
-            'sum' => array_sum($values),
-            'count' => count($values)
-        ];
+        $mapper = fn($record, $context) => yield [$record['category'], $record['value']];
+        $reducer = function ($category, $valuesIterator, $context) {
+            $sum = 0;
+            $count = 0;
+            foreach ($valuesIterator as $value) {
+                $sum += $value;
+                $count++;
+            }
+            return ['sum' => $sum, 'count' => $count];
+        };
 
         $bufferSizes = [100, 500, 1000, 2000, 5000, 10000];
         $results = [];
@@ -513,11 +556,16 @@ class PerformanceBenchmark
             ],
         ];
 
-        $mapper = fn($record) => yield [$record['category'], $record['value']];
-        $reducer = fn($category, $values) => [
-            'sum' => array_sum($values),
-            'count' => count($values)
-        ];
+        $mapper = fn($record, $context) => yield [$record['category'], $record['value']];
+        $reducer = function ($category, $valuesIterator, $context) {
+            $sum = 0;
+            $count = 0;
+            foreach ($valuesIterator as $value) {
+                $sum += $value;
+                $count++;
+            }
+            return ['sum' => $sum, 'count' => $count];
+        };
 
         foreach ($testCases as $testCase) {
             echo "\n--- {$testCase['name']}: {$testCase['size']} records ---\n";

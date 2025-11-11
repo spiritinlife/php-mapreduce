@@ -37,12 +37,12 @@ $documents = [
 
 $results = (new MapReduceBuilder())
     ->input($documents)
-    ->map(function ($text) {
+    ->map(function ($text, $context) {
         foreach (str_word_count(strtolower($text), 1) as $word) {
             yield [$word, 1];
         }
     })
-    ->reduce(function ($word, $countsIterator) {
+    ->reduce(function ($word, $countsIterator, $context) {
         $sum = 0;
         foreach ($countsIterator as $count) {
             $sum += $count;
@@ -188,10 +188,10 @@ Set the input data - any array or iterable.
 ```
 
 #### `map(callable $mapper)`
-Define the transformation function. Receives input values and must yield `[$key, $value]` pairs.
+Define the transformation function. Receives `($value, $context)` and must yield `[$key, $value]` pairs.
 
 ```php
-->map(function ($value) {
+->map(function ($value, $context) {
     // Process and emit key-value pairs
     yield [$newKey, $newValue];
 })
@@ -209,7 +209,7 @@ You manually accumulate results by iterating over the values. This approach neve
 
 ```php
 // Accumulator pattern - iterate and accumulate manually
-->reduce(function ($key, $valuesIterator) {
+->reduce(function ($key, $valuesIterator, $context) {
     $sum = 0;  // Accumulator
     foreach ($valuesIterator as $value) {
         $sum += $value;  // Accumulate
@@ -217,7 +217,7 @@ You manually accumulate results by iterating over the values. This approach neve
     return $sum;
 })
 
-// With context parameter
+// Using context data
 ->reduce(function ($key, $valuesIterator, $context) {
     $threshold = $context['threshold'];
     $sum = 0;
@@ -230,7 +230,7 @@ You manually accumulate results by iterating over the values. This approach neve
 })
 
 // If you need the full array (uses memory):
-->reduce(function ($key, $valuesIterator) {
+->reduce(function ($key, $valuesIterator, $context) {
     $values = iterator_to_array($valuesIterator);
     return ['count' => count($values), 'unique' => array_unique($values)];
 })
@@ -244,7 +244,7 @@ Because mapper and reducer functions run in **separate PHP processes**, you cann
 ```php
 // ❌ This doesn't work - variables won't be available in parallel processes
 $threshold = 100;
-->map(function ($value) use ($threshold) {  // Won't work!
+->map(function ($value, $context) use ($threshold) {  // Won't work!
     if ($value > $threshold) yield [$value, 1];
 })
 
@@ -385,10 +385,10 @@ When using parallel processing, worker processes spawn in separate contexts and 
 **Note:** Most of the time you won't need this - the library handles common cases automatically. Only use if you encounter class loading issues in parallel workers.
 
 #### `partitionBy(callable $partitioner)`
-Custom function to control which partition a key goes to. Must return `0` to `partitions-1`.
+Custom function to control which partition a key goes to. Receives `($key, $numPartitions, $context)` and must return `0` to `partitions-1`.
 
 ```php
-->partitionBy(function ($key, $numPartitions) {
+->partitionBy(function ($key, $numPartitions, $context) {
     return ord($key[0]) % $numPartitions;  // Partition by first letter
 })
 ```
@@ -406,8 +406,8 @@ $sales = [
 
 $totals = (new MapReduceBuilder())
     ->input($sales)
-    ->map(fn($sale) => yield [$sale['product'], $sale['amount']])
-    ->reduce(function($product, $amountsIterator) {
+    ->map(fn($sale, $context) => yield [$sale['product'], $sale['amount']])
+    ->reduce(function($product, $amountsIterator, $context) {
         // Collect amounts to calculate statistics
         $amounts = iterator_to_array($amountsIterator);
         return [
@@ -434,12 +434,12 @@ $documents = [
 
 $invertedIndex = (new MapReduceBuilder())
     ->input($documents)
-    ->map(function ($doc) {
+    ->map(function ($doc, $context) {
         foreach (array_unique(str_word_count(strtolower($doc['text']), 1)) as $word) {
             yield [$word, $doc['id']];
         }
     })
-    ->reduce(function($word, $docIdsIterator) {
+    ->reduce(function($word, $docIdsIterator, $context) {
         // Collect document IDs to calculate frequency and uniqueness
         $docIds = iterator_to_array($docIdsIterator);
         return [
@@ -459,13 +459,13 @@ foreach ($invertedIndex as $word => $index) {
 ```php
 $stats = (new MapReduceBuilder())
     ->input(file('access.log'))
-    ->map(function ($line) {
+    ->map(function ($line, $context) {
         if (preg_match('/^(\S+).*?"GET (\S+).*?" (\d+)/', $line, $m)) {
             yield ["ip:{$m[1]}", 1];
             yield ["status:{$m[3]}", 1];
         }
     })
-    ->reduce(function($key, $countsIterator) {
+    ->reduce(function($key, $countsIterator, $context) {
         $sum = 0;
         foreach ($countsIterator as $count) {
             $sum += $count;
@@ -543,12 +543,12 @@ $lookupTable = ['a' => 1, 'b' => 2];
 
 (new MapReduceBuilder())
     ->input($data)
-    ->map(function ($item) use ($lookupTable) {
+    ->map(function ($item, $context) use ($lookupTable) {
         // ❌ $lookupTable will be NULL or empty here!
         $value = $lookupTable[$item['key']];  // Won't work!
         yield [$item['key'], $value];
     })
-    ->reduce(function ($key, $valuesIterator) use ($totalUsers) {
+    ->reduce(function ($key, $valuesIterator, $context) use ($totalUsers) {
         // ❌ $totalUsers will be NULL or 0 here!
         $sum = 0;
         foreach ($valuesIterator as $value) {

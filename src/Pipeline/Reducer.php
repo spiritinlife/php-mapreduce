@@ -141,9 +141,7 @@ class Reducer
                     $valuesIterator = self::createValueIterator($reader, $currentRecord, $serializedKey, $currentRecord);
 
                     // Call reducer function with iterator and context
-                    $result = $context !== null
-                        ? $reducer($key, $valuesIterator, $context)
-                        : $reducer($key, $valuesIterator);
+                    $result = $reducer($key, $valuesIterator, $context);
 
                     // Write result to file
                     $writer->writeLine(serialize([
