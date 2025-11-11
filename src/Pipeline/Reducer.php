@@ -38,17 +38,18 @@ class Reducer
      *
      * @param array<int, string> $shuffledFiles List of shuffled files to process
      * @param callable $reducer Reducer function
+     * @param mixed $context Optional context data passed to reducer function
      * @return \Generator<string, array{key: mixed, value: mixed}> Generator yielding final results
      */
-    public function reduce(array $shuffledFiles, callable $reducer): \Generator
+    public function reduce(array $shuffledFiles, callable $reducer, $context = null): \Generator
     {
         $pool = Pool::create()->concurrency($this->concurrency);
 
         foreach ($shuffledFiles as $index => $filename) {
-            $pool->add(function () use ($index, $filename, $reducer) {
+            $pool->add(function () use ($index, $filename, $reducer, $context) {
                 return [
                     'index' => $index,
-                    'resultFile' => $this->processPartition($filename, $reducer, $index)
+                    'resultFile' => self::processPartition($filename, $reducer, $index, $this->workingDir, $context)
                 ];
             });
         }
@@ -91,14 +92,18 @@ class Reducer
     /**
      * Process a single reduce partition
      *
+     * Static method to enable clean serialization for parallel worker processes.
+     *
      * @param string $filename Shuffled file to process
      * @param callable $reducer Reducer function
      * @param int $index Partition index for unique file naming
+     * @param string $workingDir Working directory
+     * @param mixed $context Optional context data passed to reducer function
      * @return string Path to result file
      */
-    protected function processPartition(string $filename, callable $reducer, int $index): string
+    protected static function processPartition(string $filename, callable $reducer, int $index, string $workingDir, $context = null): string
     {
-        $resultFile = "{$this->workingDir}/reduce_result_{$index}.tmp";
+        $resultFile = "{$workingDir}/reduce_result_{$index}.tmp";
 
         if (!file_exists($filename)) {
             touch($resultFile);
@@ -122,14 +127,14 @@ class Reducer
                     $key = $group['key'];
                     $values = $group['values'];
 
-                    // Call reducer function
-                    $result = $reducer($key, $values);
+                    // Call reducer function with context as the third parameter
+                    $result = $context !== null ? $reducer($key, $values, $context) : $reducer($key, $values);
 
                     // Write result to file
                     $writer->writeLine(serialize([
                         'key' => $key,
                         'value' => $result,
-                        'serialized_key' => $this->serializeKey($key)
+                        'serialized_key' => self::serializeKey($key)
                     ]) . "\n");
                 }
 
@@ -151,10 +156,12 @@ class Reducer
     /**
      * Serialize a key for consistent grouping
      *
+     * Static method to enable use in parallel worker processes.
+     *
      * @param mixed $key Key to serialize
      * @return string Serialized key
      */
-    protected function serializeKey($key): string
+    protected static function serializeKey($key): string
     {
         if (is_scalar($key)) {
             return (string)$key;

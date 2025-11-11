@@ -53,9 +53,10 @@ class Mapper
      * @param iterable<mixed, mixed> $input Input data to process
      * @param callable $mapper Mapper function
      * @param int $reducePartitions Number of reduce partitions
+     * @param mixed $context Optional context data passed to mapper function
      * @return array<int, array<int, string>> Map output files grouped by partition
      */
-    public function map(iterable $input, callable $mapper, int $reducePartitions): array
+    public function map(iterable $input, callable $mapper, int $reducePartitions, $context = null): array
     {
         // Create pool with specified concurrency
         $pool = Pool::create()->concurrency($this->concurrency);
@@ -77,8 +78,8 @@ class Mapper
                 $chunkCopy = $chunk;
                 $currentChunkIndex = $chunkIndex;
 
-                $pool->add(function () use ($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner) {
-                    return self::processChunk($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner);
+                $pool->add(function () use ($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner, $context) {
+                    return self::processChunk($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner, $context);
                 });
 
                 $chunk = [];
@@ -91,8 +92,8 @@ class Mapper
             $chunkCopy = $chunk;
             $currentChunkIndex = $chunkIndex;
 
-            $pool->add(function () use ($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner) {
-                return self::processChunk($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner);
+            $pool->add(function () use ($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner, $context) {
+                return self::processChunk($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner, $context);
             });
         }
 
@@ -122,6 +123,7 @@ class Mapper
      * @param string $workingDir Working directory
      * @param int $bufferSize Buffer size for file writes
      * @param callable|null $partitioner Custom partitioner function
+     * @param mixed $context Optional context data passed to mapper function
      * @return array<int, string> Partition files created by this chunk
      */
     protected static function processChunk(
@@ -131,7 +133,8 @@ class Mapper
         int $reducePartitions,
         string $workingDir,
         int $bufferSize,
-        ?callable $partitioner = null
+        ?callable $partitioner = null,
+        $context = null
     ): array {
         $partitionWriters = [];
         $partitionFiles = [];
@@ -146,7 +149,8 @@ class Mapper
 
             // Process each item in the chunk
             foreach ($chunk as $value) {
-                $intermediateResults = $mapper($value);
+                // Call mapper with context as the second parameter
+                $intermediateResults = $context !== null ? $mapper($value, $context) : $mapper($value);
 
                 if ($intermediateResults === null) {
                     continue;

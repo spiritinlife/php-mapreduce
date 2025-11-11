@@ -27,6 +27,8 @@ class MapReduceBuilder
     protected int $shuffleChunkSize = 10000;
     protected int $bufferSize = 1000;
     protected int $mapperBatchSize = 500;
+    /** @var mixed */
+    protected $context = null;
 
     /**
      * Set the input data source
@@ -254,6 +256,39 @@ class MapReduceBuilder
     }
 
     /**
+     * Set context data to be passed to mapper and reducer functions
+     *
+     * Context data is serialized and made available to all mapper and reducer
+     * functions executing in parallel worker processes. This allows you to pass
+     * configuration, lookup tables, or other shared data without using closures.
+     *
+     * The context will be passed as the last parameter to your mapper and reducer functions:
+     * - Mapper: function($value, $context)
+     * - Reducer: function($key, $values, $context)
+     *
+     * Example:
+     * ```php
+     * ->context(['threshold' => 5, 'lookup' => ['a' => 1, 'b' => 2]])
+     * ->map(function($value, $context) {
+     *     if ($value > $context['threshold']) {
+     *         yield [$value, 1];
+     *     }
+     * })
+     * ->reduce(function($key, $values, $context) {
+     *     return array_sum($values) * $context['lookup'][$key];
+     * })
+     * ```
+     *
+     * @param mixed $context Any serializable data (arrays, objects, scalars)
+     * @return self
+     */
+    public function context($context): self
+    {
+        $this->context = $context;
+        return $this;
+    }
+
+    /**
      * Execute the MapReduce job
      *
      * @return \Generator<string, array{key: mixed, value: mixed}> Generator yielding final results keyed by reduce keys
@@ -289,7 +324,8 @@ class MapReduceBuilder
             $this->input,
             $this->mapper,
             $this->reducer,
-            $this->reducePartitions
+            $this->reducePartitions,
+            $this->context
         );
     }
 }

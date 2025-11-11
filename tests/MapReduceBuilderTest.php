@@ -314,4 +314,220 @@ class MapReduceBuilderTest extends TestCase
         $this->assertEquals(1, $result[1]['key']);
         $this->assertEquals(1, $result[1]['value']);
     }
+
+    public function testContextFluentInterface(): void
+    {
+        $builder = new MapReduceBuilder();
+        $context = ['threshold' => 5];
+
+        // context() should return the builder instance for chaining
+        $this->assertSame($builder, $builder->context($context));
+    }
+
+    public function testContextInMapper(): void
+    {
+        $context = ['threshold' => 5];
+
+        $result = $this->generatorToArray((new MapReduceBuilder())
+            ->input(range(1, 10))
+            ->context($context)
+            ->map(function ($value, $ctx) {
+                // Only emit values above threshold
+                if ($value > $ctx['threshold']) {
+                    yield ['high', $value];
+                }
+            })
+            ->reduce(fn($k, $v) => array_sum($v))
+            ->execute());
+
+        // Should only include 6, 7, 8, 9, 10 (values > 5)
+        $this->assertEquals(40, $result['high']['value']); // 6+7+8+9+10 = 40
+    }
+
+    public function testContextInReducer(): void
+    {
+        $context = ['multiplier' => 2];
+
+        $result = $this->generatorToArray((new MapReduceBuilder())
+            ->input([1, 2, 3, 4, 5])
+            ->context($context)
+            ->map(fn($v) => yield ['sum', $v])
+            ->reduce(function ($key, $values, $ctx) {
+                // Use context in reducer
+                return array_sum($values) * $ctx['multiplier'];
+            })
+            ->execute());
+
+        // (1+2+3+4+5) * 2 = 30
+        $this->assertEquals(30, $result['sum']['value']);
+    }
+
+    public function testContextInBothMapperAndReducer(): void
+    {
+        $context = [
+            'threshold' => 3,
+            'multiplier' => 10
+        ];
+
+        $result = $this->generatorToArray((new MapReduceBuilder())
+            ->input(range(1, 5))
+            ->context($context)
+            ->map(function ($value, $ctx) {
+                if ($value > $ctx['threshold']) {
+                    yield ['high', $value];
+                } else {
+                    yield ['low', $value];
+                }
+            })
+            ->reduce(function ($key, $values, $ctx) {
+                return array_sum($values) * $ctx['multiplier'];
+            })
+            ->execute());
+
+        // High: (4+5) * 10 = 90
+        // Low: (1+2+3) * 10 = 60
+        $this->assertEquals(90, $result['high']['value']);
+        $this->assertEquals(60, $result['low']['value']);
+    }
+
+    public function testContextWithComplexDataStructures(): void
+    {
+        $context = [
+            'lookup' => ['a' => 1, 'b' => 2, 'c' => 3],
+            'config' => ['enabled' => true, 'factor' => 5]
+        ];
+
+        $result = $this->generatorToArray((new MapReduceBuilder())
+            ->input(['a', 'b', 'c'])
+            ->context($context)
+            ->map(function ($letter, $ctx) {
+                if ($ctx['config']['enabled']) {
+                    yield [$letter, $ctx['lookup'][$letter]];
+                }
+            })
+            ->reduce(function ($key, $values, $ctx) {
+                return $values[0] * $ctx['config']['factor'];
+            })
+            ->execute());
+
+        // a: 1 * 5 = 5
+        // b: 2 * 5 = 10
+        // c: 3 * 5 = 15
+        $this->assertEquals(5, $result['a']['value']);
+        $this->assertEquals(10, $result['b']['value']);
+        $this->assertEquals(15, $result['c']['value']);
+    }
+
+    public function testContextWithLookupTables(): void
+    {
+        // Simulate the LLR use case with event counts and total users
+        $eventCounts = ['follow' => ['seller1' => 10, 'seller2' => 5]];
+        $totalBuyers = 100;
+
+        $context = [
+            'eventCounts' => $eventCounts,
+            'totalBuyers' => $totalBuyers,
+            'threshold' => 8
+        ];
+
+        $cooccurrences = [
+            ['primary' => 'seller1', 'secondary' => 'seller2', 'count' => 3],
+            ['primary' => 'seller1', 'secondary' => 'seller3', 'count' => 7],
+        ];
+
+        $result = $this->generatorToArray((new MapReduceBuilder())
+            ->input($cooccurrences)
+            ->context($context)
+            ->map(function ($cooc, $ctx) {
+                $key = "{$cooc['primary']}_{$cooc['secondary']}";
+                yield [$key, $cooc['count']];
+            })
+            ->reduce(function ($key, $counts, $ctx) {
+                $totalCount = array_sum($counts);
+
+                // Only return if above threshold
+                if ($totalCount >= $ctx['threshold']) {
+                    return [
+                        'pair' => $key,
+                        'count' => $totalCount,
+                        'percentage' => ($totalCount / $ctx['totalBuyers']) * 100
+                    ];
+                }
+
+                return null;
+            })
+            ->execute());
+
+        // Both counts are below threshold (3 < 8, 7 < 8)
+        // When reducer returns null, it still emits a record with value=null
+        $this->assertCount(2, $result);
+        $this->assertNull($result['seller1_seller2']['value']);
+        $this->assertNull($result['seller1_seller3']['value']);
+    }
+
+    public function testContextIsNullByDefault(): void
+    {
+        // Test that context works when not set (should be null)
+        $result = $this->generatorToArray((new MapReduceBuilder())
+            ->input([1, 2, 3])
+            ->map(fn($v) => yield ['sum', $v])
+            ->reduce(fn($k, $v) => array_sum($v))
+            ->execute());
+
+        $this->assertEquals(6, $result['sum']['value']);
+    }
+
+    public function testContextWithParallelProcessing(): void
+    {
+        // Test that context works correctly with multiple parallel workers
+        $context = ['multiplier' => 3];
+
+        $result = $this->generatorToArray((new MapReduceBuilder())
+            ->input(range(1, 100))
+            ->context($context)
+            ->map(function ($value, $ctx) {
+                yield ['group' . ($value % 5), $value];
+            })
+            ->reduce(function ($key, $values, $ctx) {
+                return array_sum($values) * $ctx['multiplier'];
+            })
+            ->concurrent(4) // Multiple workers
+            ->partitions(8)
+            ->execute());
+
+        // Verify all groups are present and multiplied correctly
+        $this->assertCount(5, $result); // groups 0-4
+
+        // Manually calculate expected sum for group0: 5+10+15+...+100 = 1050
+        // Multiplied by 3 = 3150
+        $group0Sum = 0;
+        for ($i = 5; $i <= 100; $i += 5) {
+            $group0Sum += $i;
+        }
+        $this->assertEquals($group0Sum * 3, $result['group0']['value']);
+    }
+
+    public function testContextSerializationOfObjects(): void
+    {
+        // Test that context can contain objects (as long as they're serializable)
+        $contextObject = new \stdClass();
+        $contextObject->threshold = 5;
+        $contextObject->label = 'test';
+
+        $context = ['config' => $contextObject];
+
+        $result = $this->generatorToArray((new MapReduceBuilder())
+            ->input(range(1, 10))
+            ->context($context)
+            ->map(function ($value, $ctx) {
+                if ($value > $ctx['config']->threshold) {
+                    yield [$ctx['config']->label, $value];
+                }
+            })
+            ->reduce(fn($k, $v) => array_sum($v))
+            ->execute());
+
+        // Should sum values > 5: 6+7+8+9+10 = 40
+        $this->assertEquals(40, $result['test']['value']);
+    }
 }

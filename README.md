@@ -200,6 +200,31 @@ Define the aggregation function. Receives all values for each key.
 })
 ```
 
+#### `context(mixed $data)`
+Pass shared data to mapper and reducer functions executing in parallel processes.
+
+Because mapper and reducer functions run in **separate PHP processes**, you cannot use closure `use` clauses to access external variables. Use `context()` instead to pass serializable data that will be available to all workers.
+
+```php
+// ❌ This doesn't work - variables won't be available in parallel processes
+$threshold = 100;
+->map(function ($value) use ($threshold) {  // Won't work!
+    if ($value > $threshold) yield [$value, 1];
+})
+
+// ✅ Use context() instead
+->context(['threshold' => 100])
+->map(function ($value, $context) {
+    if ($value > $context['threshold']) yield [$value, 1];
+})
+```
+
+The context is passed as an additional parameter to both mapper and reducer:
+- **Mapper:** `function($value, $context)`
+- **Reducer:** `function($key, $values, $context)`
+
+See [Parallel Processing & Context](#parallel-processing--context) for details.
+
 #### `execute(): Generator`
 Run the job and return results as a generator
 

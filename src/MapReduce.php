@@ -109,9 +109,10 @@ class MapReduce
      * Execute MapReduce operation
      *
      * @param iterable<mixed, mixed> $input Input data to process
-     * @param callable $mapper Function(mixed $key, mixed $value): iterable<array{0: mixed, 1: mixed}>
-     * @param callable $reducer Function(mixed $key, array<int, mixed> $values): mixed
+     * @param callable $mapper Function(mixed $key, mixed $value, mixed $context = null): iterable<array{0: mixed, 1: mixed}>
+     * @param callable $reducer Function(mixed $key, array<int, mixed> $values, mixed $context = null): mixed
      * @param int|null $reducePartitions Number of reduce partitions (default: same as concurrency)
+     * @param mixed $context Optional context data passed to mapper and reducer functions
      * @return \Generator<string, array{key: mixed, value: mixed}> Generator yielding final results keyed by reduce keys
      * @throws \RuntimeException If execution fails
      */
@@ -119,7 +120,8 @@ class MapReduce
         iterable $input,
         callable $mapper,
         callable $reducer,
-        ?int $reducePartitions = null
+        ?int $reducePartitions = null,
+        $context = null
     ): \Generator {
         $reducePartitions = $reducePartitions ?? $this->concurrency;
 
@@ -129,13 +131,13 @@ class MapReduce
 
         try {
             // Phase 1: Map - process input and emit intermediate key-value pairs
-            $mapOutputFiles = $this->mapper->map($input, $mapper, $reducePartitions);
+            $mapOutputFiles = $this->mapper->map($input, $mapper, $reducePartitions, $context);
 
             // Phase 2: Shuffle - group intermediate data by key
             $shuffledFiles = $this->shuffler->shuffle($mapOutputFiles, $reducePartitions);
 
             // Phase 3: Reduce - aggregate values for each key
-            $results = $this->reducer->reduce($shuffledFiles, $reducer);
+            $results = $this->reducer->reduce($shuffledFiles, $reducer, $context);
 
             // Yield results from the generator
             yield from $results;
