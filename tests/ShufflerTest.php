@@ -64,14 +64,26 @@ class ShufflerTest extends TestCase
             return $results;
         }
         while (($line = fgets($handle)) !== false) {
-            $group = unserialize(trim($line));
-            // Use string representation of key for consistency (same as serializeKey in Shuffler)
-            if (is_scalar($group['key'])) {
-                $keyIndex = (string)$group['key'];
-            } else {
-                $keyIndex = serialize($group['key']);
+            $line = trim($line);
+            if (empty($line)) {
+                continue;
             }
-            $results[$keyIndex] = $group['values'];
+
+            // NEW format: individual key-value pairs (not grouped)
+            $record = unserialize($line);
+
+            // Use string representation of key for consistency (same as serializeKey in Shuffler)
+            if (is_scalar($record['key'])) {
+                $keyIndex = (string)$record['key'];
+            } else {
+                $keyIndex = serialize($record['key']);
+            }
+
+            // Group values by key
+            if (!isset($results[$keyIndex])) {
+                $results[$keyIndex] = [];
+            }
+            $results[$keyIndex][] = $record['value'];
         }
         fclose($handle);
         return $results;
@@ -188,13 +200,17 @@ class ShufflerTest extends TestCase
 
         $shuffledFile = $shuffler->shufflePartition(0, [$inputFile]);
 
-        // Read file line by line to check order
+        // Read file line by line to check order (NEW format: individual key-value pairs)
         $handle = fopen($shuffledFile, 'r');
         $keys = [];
         if ($handle !== false) {
             while (($line = fgets($handle)) !== false) {
-                $group = unserialize(trim($line));
-                $keys[] = $group['key'];
+                $line = trim($line);
+                if (empty($line)) {
+                    continue;
+                }
+                $record = unserialize($line);
+                $keys[] = $record['key'];
             }
             fclose($handle);
         }

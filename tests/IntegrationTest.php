@@ -43,7 +43,8 @@ class IntegrationTest extends TestCase
                     yield [$word, $doc['id']];
                 }
             })
-            ->reduce(function ($word, $docIds) {
+            ->reduce(function ($word, $docIdsIterator) {
+                $docIds = iterator_to_array($docIdsIterator);
                 return [
                     'document_ids' => array_unique($docIds),
                     'document_count' => count(array_unique($docIds)),
@@ -94,9 +95,9 @@ class IntegrationTest extends TestCase
                     yield ["path:$path", ['hits' => 1, 'bytes' => $bytes]];
                 }
             })
-            ->reduce(function ($key, $metrics) {
+            ->reduce(function ($key, $metricsIterator) {
                 $result = [];
-                foreach ($metrics as $metric) {
+                foreach ($metricsIterator as $metric) {
                     foreach ($metric as $field => $value) {
                         $result[$field] = ($result[$field] ?? 0) + $value;
                     }
@@ -147,11 +148,11 @@ class IntegrationTest extends TestCase
                     yield [$record['data']['user_id'], ['order' => $record['data']]];
                 }
             })
-            ->reduce(function ($userId, $records) {
+            ->reduce(function ($userId, $recordsIterator) {
                 $user = null;
                 $orders = [];
 
-                foreach ($records as $record) {
+                foreach ($recordsIterator as $record) {
                     if (isset($record['user'])) {
                         $user = $record['user'];
                     } else {
@@ -209,7 +210,8 @@ class IntegrationTest extends TestCase
             ->map(function ($transaction) {
                 yield [$transaction['date'], $transaction['amount']];
             })
-            ->reduce(function ($date, $amounts) {
+            ->reduce(function ($date, $amountsIterator) {
+                $amounts = iterator_to_array($amountsIterator);
                 sort($amounts);
                 return [
                     'total' => array_sum($amounts),
@@ -249,8 +251,12 @@ class IntegrationTest extends TestCase
                     yield [$word, 1];
                 }
             })
-            ->reduce(function ($word, $counts) {
-                return array_sum($counts);
+            ->reduce(function ($word, $countsIterator) {
+                $sum = 0;
+                foreach ($countsIterator as $count) {
+                    $sum += $count;
+                }
+                return $sum;
             })
             ->execute());
 
@@ -289,8 +295,12 @@ class IntegrationTest extends TestCase
                     }
                 }
             })
-            ->reduce(function ($pair, $counts) {
-                return array_sum($counts);
+            ->reduce(function ($pair, $countsIterator) {
+                $sum = 0;
+                foreach ($countsIterator as $count) {
+                    $sum += $count;
+                }
+                return $sum;
             })
             ->execute());
 
@@ -317,8 +327,12 @@ class IntegrationTest extends TestCase
                     yield ['total_buyers', 1];
                 }
             })
-            ->reduce(function ($key, $values) {
-                return array_sum($values);
+            ->reduce(function ($key, $valuesIterator) {
+                $sum = 0;
+                foreach ($valuesIterator as $value) {
+                    $sum += $value;
+                }
+                return $sum;
             })
             ->concurrent(2)
             ->execute());
@@ -350,8 +364,8 @@ class IntegrationTest extends TestCase
                 // This key appears 20,000 times and should not be lost
                 yield ['total_count', 1];
             })
-            ->reduce(function ($key, $values) {
-                return array_sum(iterator_to_array($values));
+            ->reduce(function ($key, $valuesIterator) {
+                return array_sum(iterator_to_array($valuesIterator));
             })
             ->concurrent(1)
             ->chunkSize(10000)
@@ -384,7 +398,8 @@ class IntegrationTest extends TestCase
             ->map(function ($record) {
                 yield [$record['category'], $record['value']];
             })
-            ->reduce(function ($category, $values) {
+            ->reduce(function ($category, $valuesIterator) {
+                $values = iterator_to_array($valuesIterator);
                 return [
                     'count' => count($values),
                     'sum' => array_sum($values),

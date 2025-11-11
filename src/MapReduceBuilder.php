@@ -69,17 +69,35 @@ class MapReduceBuilder
     /**
      * Set the reducer function
      *
-     * The reducer receives a key and all values associated with that key,
-     * and should return a single aggregated value.
+     * The reducer receives a key and an iterator of values associated with that key.
+     * Values are streamed one at a time for memory efficiency, never loading all
+     * values into memory at once. This follows the Hadoop-style reducer pattern.
+     *
+     * The reducer should iterate through the values and return a single aggregated result.
      *
      * Example:
      * ```php
-     * ->reduce(function($word, $counts) {
-     *     return array_sum($counts);
+     * ->reduce(function($word, $countsIterator) {
+     *     $sum = 0;
+     *     foreach ($countsIterator as $count) {
+     *         $sum += $count;
+     *     }
+     *     return $sum;
      * })
      * ```
      *
-     * @param callable $reducer Function(mixed $key, array $values): mixed
+     * With context:
+     * ```php
+     * ->reduce(function($word, $countsIterator, $context) {
+     *     $sum = 0;
+     *     foreach ($countsIterator as $count) {
+     *         $sum += $count;
+     *     }
+     *     return $sum * $context['multiplier'];
+     * })
+     * ```
+     *
+     * @param callable $reducer Function(mixed $key, \Iterator $valuesIterator, mixed $context = null): mixed
      * @return self
      */
     public function reduce(callable $reducer): self

@@ -28,9 +28,13 @@ $wordCounts = (new MapReduceBuilder())
             yield [$word, 1];
         }
     })
-    ->reduce(function ($word, $counts) {
-        // Sum all counts for this word
-        return array_sum($counts);
+    ->reduce(function ($word, $countsIterator) {
+        // Sum all counts for this word by iterating through values
+        $sum = 0;
+        foreach ($countsIterator as $count) {
+            $sum += $count;
+        }
+        return $sum;
     })
     ->concurrent(2)  // Use 2 concurrent workers
     ->execute();

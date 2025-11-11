@@ -103,7 +103,7 @@ class Reducer
      * Static method to enable clean serialization for parallel worker processes.
      *
      * @param string $filename Shuffled file to process
-     * @param callable $reducer Reducer function
+     * @param callable $reducer Reducer function with signature: ($key, $valuesIterator, $context)
      * @param int $index Partition index for unique file naming
      * @param string $workingDir Working directory
      * @param mixed $context Optional context data passed to reducer function
@@ -125,24 +125,31 @@ class Reducer
             $reader = new BufferedFileReader($filename);
 
             try {
-                while (($line = $reader->getLine()) !== null) {
-                    // Skip empty lines
-                    if (empty($line)) {
-                        continue;
-                    }
+                $currentRecord = null;
 
-                    $group = unserialize($line);
-                    $key = $group['key'];
-                    $values = $group['values'];
+                // Read first record
+                $line = $reader->getLine();
+                if ($line !== null && !empty($line)) {
+                    $currentRecord = unserialize($line);
+                }
 
-                    // Call reducer function with context as the third parameter
-                    $result = $context !== null ? $reducer($key, $values, $context) : $reducer($key, $values);
+                while ($currentRecord !== null) {
+                    $key = $currentRecord['key'];
+                    $serializedKey = self::serializeKey($key);
+
+                    // Create an iterator that yields values for this key
+                    $valuesIterator = self::createValueIterator($reader, $currentRecord, $serializedKey, $currentRecord);
+
+                    // Call reducer function with iterator and context
+                    $result = $context !== null
+                        ? $reducer($key, $valuesIterator, $context)
+                        : $reducer($key, $valuesIterator);
 
                     // Write result to file
                     $writer->writeLine(serialize([
                         'key' => $key,
                         'value' => $result,
-                        'serialized_key' => self::serializeKey($key)
+                        'serialized_key' => $serializedKey
                     ]) . "\n");
                 }
 
@@ -159,6 +166,46 @@ class Reducer
         }
 
         return $resultFile;
+    }
+
+    /**
+     * Create an iterator that yields values for consecutive records with the same key
+     *
+     * This generator function yields values one at a time for memory efficiency,
+     * following the Hadoop-style iterator pattern.
+     *
+     * @param BufferedFileReader $reader File reader positioned after the first record
+     * @param array{key: mixed, value: mixed} $firstRecord First record for this key
+     * @param string $serializedKey Serialized key to match against
+     * @param array{key: mixed, value: mixed}|null &$nextRecord Output parameter - will contain the next record with different key (or null)
+     * @return \Generator<int, mixed> Generator yielding values for this key
+     */
+    private static function createValueIterator(BufferedFileReader $reader, array $firstRecord, string $serializedKey, ?array &$nextRecord): \Generator
+    {
+        // Yield the first value
+        yield $firstRecord['value'];
+
+        // Continue reading while we have the same key
+        while (($line = $reader->getLine()) !== null) {
+            if (empty($line)) {
+                continue;
+            }
+
+            $record = unserialize($line);
+            $recordSerializedKey = self::serializeKey($record['key']);
+
+            if ($recordSerializedKey === $serializedKey) {
+                // Same key - yield the value
+                yield $record['value'];
+            } else {
+                // Different key - save it for the next iteration and stop
+                $nextRecord = $record;
+                return;
+            }
+        }
+
+        // No more records - set nextRecord to null
+        $nextRecord = null;
     }
 
     /**

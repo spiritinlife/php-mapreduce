@@ -263,30 +263,17 @@ class Shuffler
         }
 
         try {
-            $currentKey = null;
-            $currentValues = [];
-            $currentOriginalKey = null;
-
             while (!$heap->isEmpty()) {
                 // Extract the record with smallest key - O(log k)
                 $element = $heap->extract();
                 $minRecord = $element['record'];
                 $fileIndex = $element['fileIndex'];
 
-                // If this is a new key, write the previous key's group (if any)
-                if ($currentKey !== null && $currentKey !== $minRecord['serialized_key']) {
-                    $writer->writeLine(serialize([
-                        'key' => $currentOriginalKey,
-                        'values' => $currentValues
-                    ]) . "\n");
-
-                    $currentValues = [];
-                }
-
-                // Accumulate values for this key
-                $currentKey = $minRecord['serialized_key'];
-                $currentOriginalKey = $minRecord['original_key'];
-                $currentValues[] = $minRecord['value'];
+                // Write individual key-value pair immediately (no accumulation)
+                $writer->writeLine(serialize([
+                    'key' => $minRecord['original_key'],
+                    'value' => $minRecord['value']
+                ]) . "\n");
 
                 // Read next record from the buffered reader
                 $line = $readers[$fileIndex]->getLine();
@@ -296,14 +283,6 @@ class Shuffler
                         'fileIndex' => $fileIndex
                     ]);
                 }
-            }
-
-            // Write the final group
-            if ($currentKey !== null) {
-                $writer->writeLine(serialize([
-                    'key' => $currentOriginalKey,
-                    'values' => $currentValues
-                ]) . "\n");
             }
 
             // Close writer and all readers

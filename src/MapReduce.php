@@ -114,7 +114,7 @@ class MapReduce
      *
      * @param iterable<mixed, mixed> $input Input data to process
      * @param callable $mapper Function(mixed $key, mixed $value, mixed $context = null): iterable<array{0: mixed, 1: mixed}>
-     * @param callable $reducer Function(mixed $key, array<int, mixed> $values, mixed $context = null): mixed
+     * @param callable $reducer Function(mixed $key, \Iterator $valuesIterator, mixed $context = null): mixed
      * @param int|null $reducePartitions Number of reduce partitions (default: same as concurrency)
      * @param mixed $context Optional context data passed to mapper and reducer functions
      * @return \Generator<string, array{key: mixed, value: mixed}> Generator yielding final results keyed by reduce keys

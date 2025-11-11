@@ -29,7 +29,9 @@ $salesByProduct = (new MapReduceBuilder())
     ->map(function ($sale) {
         yield [$sale['product'], $sale['amount']];
     })
-    ->reduce(function ($product, $amounts) {
+    ->reduce(function ($product, $amountsIterator) {
+        // Collect amounts into array for statistics calculation
+        $amounts = iterator_to_array($amountsIterator);
         return [
             'total' => array_sum($amounts),
             'count' => count($amounts),
@@ -67,7 +69,9 @@ $salesByRegion = (new MapReduceBuilder())
     ->map(function ($sale) {
         yield [$sale['region'], $sale['amount']];
     })
-    ->reduce(function ($region, $amounts) {
+    ->reduce(function ($region, $amountsIterator) {
+        // Collect amounts into array for statistics calculation
+        $amounts = iterator_to_array($amountsIterator);
         return [
             'total' => array_sum($amounts),
             'count' => count($amounts),

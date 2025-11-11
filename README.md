@@ -42,8 +42,12 @@ $results = (new MapReduceBuilder())
             yield [$word, 1];
         }
     })
-    ->reduce(function ($word, $counts) {
-        return array_sum($counts);
+    ->reduce(function ($word, $countsIterator) {
+        $sum = 0;
+        foreach ($countsIterator as $count) {
+            $sum += $count;
+        }
+        return $sum;
     })
     ->execute();
 
@@ -194,11 +198,41 @@ Define the transformation function. Receives input values and must yield `[$key,
 ```
 
 #### `reduce(callable $reducer)`
-Define the aggregation function. Receives all values for each key.
+Define the aggregation function using an **accumulator + iterator pattern**.
+
+The reducer receives `($key, $valuesIterator, $context)` where:
+- `$key` - The current key being reduced
+- `$valuesIterator` - Iterator that streams values one at a time for memory efficiency
+- `$context` - Optional shared context data (see [context()](#contextmixed-data) method)
+
+You manually accumulate results by iterating over the values. This approach never loads all values for a key into memory at once, which is critical for keys with many values (e.g., a global counter with millions of entries).
 
 ```php
-->reduce(function ($key, array $values) {
-    return array_sum($values);
+// Accumulator pattern - iterate and accumulate manually
+->reduce(function ($key, $valuesIterator) {
+    $sum = 0;  // Accumulator
+    foreach ($valuesIterator as $value) {
+        $sum += $value;  // Accumulate
+    }
+    return $sum;
+})
+
+// With context parameter
+->reduce(function ($key, $valuesIterator, $context) {
+    $threshold = $context['threshold'];
+    $sum = 0;
+    foreach ($valuesIterator as $value) {
+        if ($value > $threshold) {
+            $sum += $value;
+        }
+    }
+    return $sum;
+})
+
+// If you need the full array (uses memory):
+->reduce(function ($key, $valuesIterator) {
+    $values = iterator_to_array($valuesIterator);
+    return ['count' => count($values), 'unique' => array_unique($values)];
 })
 ```
 
@@ -223,7 +257,7 @@ $threshold = 100;
 
 The context is passed as an additional parameter to both mapper and reducer:
 - **Mapper:** `function($value, $context)`
-- **Reducer:** `function($key, $values, $context)`
+- **Reducer:** `function($key, $valuesIterator, $context)`
 
 See [Parallel Processing & Context](#parallel-processing--context) for details.
 
@@ -334,6 +368,22 @@ Directory for temporary files. Default: system temp
 
 **Tip:** Use SSD storage for better performance on large datasets.
 
+#### `autoload(string $path)`
+Configure autoloader path for parallel worker processes. Default: none
+
+When using parallel processing, worker processes spawn in separate contexts and may need to load dependencies. This method specifies the path to your autoloader (typically `vendor/autoload.php`).
+
+```php
+->autoload(__DIR__ . '/vendor/autoload.php')
+```
+
+**When to use:**
+- When mapper/reducer functions use classes from external libraries
+- When using custom classes that need autoloading
+- If you get "class not found" errors in worker processes
+
+**Note:** Most of the time you won't need this - the library handles common cases automatically. Only use if you encounter class loading issues in parallel workers.
+
 #### `partitionBy(callable $partitioner)`
 Custom function to control which partition a key goes to. Must return `0` to `partitions-1`.
 
@@ -357,11 +407,15 @@ $sales = [
 $totals = (new MapReduceBuilder())
     ->input($sales)
     ->map(fn($sale) => yield [$sale['product'], $sale['amount']])
-    ->reduce(fn($product, $amounts) => [
-        'total' => array_sum($amounts),
-        'average' => array_sum($amounts) / count($amounts),
-        'count' => count($amounts),
-    ])
+    ->reduce(function($product, $amountsIterator) {
+        // Collect amounts to calculate statistics
+        $amounts = iterator_to_array($amountsIterator);
+        return [
+            'total' => array_sum($amounts),
+            'average' => array_sum($amounts) / count($amounts),
+            'count' => count($amounts),
+        ];
+    })
     ->execute();
 
 foreach ($totals as $product => $stats) {
@@ -385,10 +439,14 @@ $invertedIndex = (new MapReduceBuilder())
             yield [$word, $doc['id']];
         }
     })
-    ->reduce(fn($word, $docIds) => [
-        'documents' => array_unique($docIds),
-        'frequency' => count($docIds),
-    ])
+    ->reduce(function($word, $docIdsIterator) {
+        // Collect document IDs to calculate frequency and uniqueness
+        $docIds = iterator_to_array($docIdsIterator);
+        return [
+            'documents' => array_unique($docIds),
+            'frequency' => count($docIds),
+        ];
+    })
     ->execute();
 
 foreach ($invertedIndex as $word => $index) {
@@ -407,7 +465,13 @@ $stats = (new MapReduceBuilder())
             yield ["status:{$m[3]}", 1];
         }
     })
-    ->reduce(fn($key, $counts) => array_sum($counts))
+    ->reduce(function($key, $countsIterator) {
+        $sum = 0;
+        foreach ($countsIterator as $count) {
+            $sum += $count;
+        }
+        return $sum;
+    })
     ->concurrent(8)
     ->execute();
 
@@ -444,11 +508,18 @@ $results = (new MapReduceBuilder())
 
         yield [$purchase['user'], $bonusPoints];
     })
-    ->reduce(function ($user, $points, $context) {
+    ->reduce(function ($user, $pointsIterator, $context) {
         // Context also available in reducer
         $tier = $context['userTiers'][$user];
+
+        // Stream and sum points without loading all into memory
+        $totalPoints = 0;
+        foreach ($pointsIterator as $points) {
+            $totalPoints += $points;
+        }
+
         return [
-            'total_points' => array_sum($points),
+            'total_points' => $totalPoints,
             'tier' => $tier,
         ];
     })
@@ -477,9 +548,13 @@ $lookupTable = ['a' => 1, 'b' => 2];
         $value = $lookupTable[$item['key']];  // Won't work!
         yield [$item['key'], $value];
     })
-    ->reduce(function ($key, $values) use ($totalUsers) {
+    ->reduce(function ($key, $valuesIterator) use ($totalUsers) {
         // ❌ $totalUsers will be NULL or 0 here!
-        $percentage = array_sum($values) / $totalUsers;  // Won't work!
+        $sum = 0;
+        foreach ($valuesIterator as $value) {
+            $sum += $value;
+        }
+        $percentage = $sum / $totalUsers;  // Won't work!
         return $percentage;
     })
     ->execute();
@@ -506,9 +581,13 @@ $lookupTable = ['a' => 1, 'b' => 2];
         $value = $context['lookupTable'][$item['key']];
         yield [$item['key'], $value];
     })
-    ->reduce(function ($key, $values, $context) {
+    ->reduce(function ($key, $valuesIterator, $context) {
         // ✅ Context available in reducer too
-        $percentage = array_sum($values) / $context['totalUsers'];
+        $sum = 0;
+        foreach ($valuesIterator as $value) {
+            $sum += $value;
+        }
+        $percentage = $sum / $context['totalUsers'];
         return $percentage;
     })
     ->execute();
@@ -545,10 +624,13 @@ $results = (new MapReduceBuilder())
         'eventCounts' => $eventCounts,
         'minScore' => 5.0
     ])
-    ->reduce(function ($key, $values, $context) {
+    ->reduce(function ($key, $valuesIterator, $context) {
         // Extract shared data from context
         $totalBuyers = $context['totalBuyers'];
         $eventCounts = $context['eventCounts'];
+
+        // Collect values for calculation
+        $values = iterator_to_array($valuesIterator);
 
         // Use in calculations
         $score = calculateScore($values, $totalBuyers, $eventCounts);
@@ -574,6 +656,7 @@ $results = (new MapReduceBuilder())
     ->shuffleChunkSize(50000)        // Shuffle sort memory (larger = fewer merges)
     ->bufferSize(5000)               // Write buffer (larger = fewer syscalls)
     ->workingDirectory('/ssd')       // Use fast storage for large jobs
+    ->autoload(__DIR__ . '/vendor/autoload.php')  // Optional: for custom class loading
 ```
 
 ### Memory vs Performance

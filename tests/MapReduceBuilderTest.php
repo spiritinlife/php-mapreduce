@@ -61,7 +61,7 @@ class MapReduceBuilderTest extends TestCase
         // All methods should return the builder instance for chaining
         $this->assertSame($builder, $builder->input([1, 2, 3]));
         $this->assertSame($builder, $builder->map(fn($v) => yield [$v, $v]));
-        $this->assertSame($builder, $builder->reduce(fn($k, $v) => $v));
+        $this->assertSame($builder, $builder->reduce(fn($k, $vIterator) => iterator_to_array($vIterator)));
         $this->assertSame($builder, $builder->concurrent(4));
         $this->assertSame($builder, $builder->partitions(8));
         $this->assertSame($builder, $builder->chunkSize(1000));
@@ -74,7 +74,7 @@ class MapReduceBuilderTest extends TestCase
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(['a' => 1, 'b' => 2])
             ->map(fn($v) => yield [$v, $v])
-            ->reduce(fn($k, $v) => $v[0])
+            ->reduce(fn($k, $vIterator) => iterator_to_array($vIterator)[0])
             ->execute());
 
         $this->assertCount(2, $result);
@@ -92,7 +92,13 @@ class MapReduceBuilderTest extends TestCase
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(range(1, 10))
             ->map(fn($v) => yield ['sum', $v])
-            ->reduce(fn($k, $v) => array_sum($v))
+            ->reduce(function($_k, $vIterator) {
+                $sum = 0;
+                foreach ($vIterator as $value) {
+                    $sum += $value;
+                }
+                return $sum;
+            })
             ->concurrent(2) // 2 workers
             ->execute());
 
@@ -104,7 +110,7 @@ class MapReduceBuilderTest extends TestCase
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(['a' => 1, 'b' => 2, 'c' => 3])
             ->map(fn($v) => yield [$v, $v])
-            ->reduce(fn($k, $v) => $v[0])
+            ->reduce(fn($k, $vIterator) => iterator_to_array($vIterator)[0])
             ->partitions(4) // 4 reduce partitions
             ->execute());
 
@@ -116,7 +122,13 @@ class MapReduceBuilderTest extends TestCase
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(range(1, 100))
             ->map(fn($v) => yield ['total', $v])
-            ->reduce(fn($k, $v) => array_sum($v))
+            ->reduce(function($_k, $vIterator) {
+                $sum = 0;
+                foreach ($vIterator as $value) {
+                    $sum += $value;
+                }
+                return $sum;
+            })
             ->chunkSize(10) // Small chunks
             ->execute());
 
@@ -130,7 +142,7 @@ class MapReduceBuilderTest extends TestCase
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(['x' => 1])
             ->map(fn($v) => yield [$v, $v])
-            ->reduce(fn($k, $v) => $v[0])
+            ->reduce(fn($k, $vIterator) => iterator_to_array($vIterator)[0])
             ->workingDirectory($customDir)
             ->execute());
 
@@ -149,7 +161,7 @@ class MapReduceBuilderTest extends TestCase
             ->partitionBy(function ($word, $numPartitions) {
                 return ord(substr($word, 0, 1)) % $numPartitions;
             })
-            ->reduce(fn($word, $lengths) => $lengths[0])
+            ->reduce(fn($word, $lengthsIterator) => iterator_to_array($lengthsIterator)[0])
             ->partitions(3)
             ->execute());
 
@@ -164,7 +176,7 @@ class MapReduceBuilderTest extends TestCase
 
         $this->generatorToArray((new MapReduceBuilder())
             ->map(fn($v) => yield [$v, $v])
-            ->reduce(fn($k, $v) => $v)
+            ->reduce(fn($k, $vIterator) => iterator_to_array($vIterator))
             ->execute());
     }
 
@@ -175,7 +187,7 @@ class MapReduceBuilderTest extends TestCase
 
         $this->generatorToArray((new MapReduceBuilder())
             ->input([1, 2, 3])
-            ->reduce(fn($k, $v) => $v)
+            ->reduce(fn($k, $vIterator) => iterator_to_array($vIterator))
             ->execute());
     }
 
@@ -232,8 +244,12 @@ class MapReduceBuilderTest extends TestCase
                     yield [$word, 1];
                 }
             })
-            ->reduce(function ($word, $counts) {
-                return array_sum($counts);
+            ->reduce(function ($word, $countsIterator) {
+                $sum = 0;
+                foreach ($countsIterator as $count) {
+                    $sum += $count;
+                }
+                return $sum;
             })
             ->concurrent(2)
             ->partitions(4)
@@ -257,7 +273,7 @@ class MapReduceBuilderTest extends TestCase
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(['a' => 1, 'b' => 2])
             ->map(fn($v) => yield [$v, $v])
-            ->reduce(fn($k, $v) => $v[0])
+            ->reduce(fn($k, $vIterator) => iterator_to_array($vIterator)[0])
             ->execute());
 
         $this->assertCount(2, $result);
@@ -275,7 +291,7 @@ class MapReduceBuilderTest extends TestCase
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input($generator())
             ->map(fn($v) => yield [$v, $v])
-            ->reduce(fn($k, $v) => $v[0])
+            ->reduce(fn($k, $vIterator) => iterator_to_array($vIterator)[0])
             ->execute());
 
         $this->assertCount(3, $result);
@@ -293,7 +309,7 @@ class MapReduceBuilderTest extends TestCase
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input([])
             ->map(fn($v) => yield [$v, $v])
-            ->reduce(fn($k, $v) => $v)
+            ->reduce(fn($k, $vIterator) => iterator_to_array($vIterator))
             ->execute());
 
         $this->assertEmpty($result);
@@ -307,7 +323,7 @@ class MapReduceBuilderTest extends TestCase
             ->partitions(4)
             ->input(['a' => 1])
             ->chunkSize(100)
-            ->reduce(fn($k, $v) => $v[0])
+            ->reduce(fn($k, $vIterator) => iterator_to_array($vIterator)[0])
             ->map(fn($v) => yield [$v, $v])
             ->execute());
 
@@ -337,7 +353,13 @@ class MapReduceBuilderTest extends TestCase
                     yield ['high', $value];
                 }
             })
-            ->reduce(fn($k, $v) => array_sum($v))
+            ->reduce(function($_k, $vIterator) {
+                $sum = 0;
+                foreach ($vIterator as $value) {
+                    $sum += $value;
+                }
+                return $sum;
+            })
             ->execute());
 
         // Should only include 6, 7, 8, 9, 10 (values > 5)
@@ -352,9 +374,13 @@ class MapReduceBuilderTest extends TestCase
             ->input([1, 2, 3, 4, 5])
             ->context($context)
             ->map(fn($v) => yield ['sum', $v])
-            ->reduce(function ($key, $values, $ctx) {
+            ->reduce(function ($key, $valuesIterator, $ctx) {
                 // Use context in reducer
-                return array_sum($values) * $ctx['multiplier'];
+                $sum = 0;
+                foreach ($valuesIterator as $value) {
+                    $sum += $value;
+                }
+                return $sum * $ctx['multiplier'];
             })
             ->execute());
 
@@ -379,8 +405,12 @@ class MapReduceBuilderTest extends TestCase
                     yield ['low', $value];
                 }
             })
-            ->reduce(function ($key, $values, $ctx) {
-                return array_sum($values) * $ctx['multiplier'];
+            ->reduce(function ($key, $valuesIterator, $ctx) {
+                $sum = 0;
+                foreach ($valuesIterator as $value) {
+                    $sum += $value;
+                }
+                return $sum * $ctx['multiplier'];
             })
             ->execute());
 
@@ -405,7 +435,8 @@ class MapReduceBuilderTest extends TestCase
                     yield [$letter, $ctx['lookup'][$letter]];
                 }
             })
-            ->reduce(function ($key, $values, $ctx) {
+            ->reduce(function ($_key, $valuesIterator, $ctx) {
+                $values = iterator_to_array($valuesIterator);
                 return $values[0] * $ctx['config']['factor'];
             })
             ->execute());
@@ -438,12 +469,15 @@ class MapReduceBuilderTest extends TestCase
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input($cooccurrences)
             ->context($context)
-            ->map(function ($cooc, $ctx) {
+            ->map(function ($cooc, $_ctx) {
                 $key = "{$cooc['primary']}_{$cooc['secondary']}";
                 yield [$key, $cooc['count']];
             })
-            ->reduce(function ($key, $counts, $ctx) {
-                $totalCount = array_sum($counts);
+            ->reduce(function ($key, $countsIterator, $ctx) {
+                $totalCount = 0;
+                foreach ($countsIterator as $count) {
+                    $totalCount += $count;
+                }
 
                 // Only return if above threshold
                 if ($totalCount >= $ctx['threshold']) {
@@ -471,7 +505,13 @@ class MapReduceBuilderTest extends TestCase
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input([1, 2, 3])
             ->map(fn($v) => yield ['sum', $v])
-            ->reduce(fn($k, $v) => array_sum($v))
+            ->reduce(function($_k, $vIterator) {
+                $sum = 0;
+                foreach ($vIterator as $value) {
+                    $sum += $value;
+                }
+                return $sum;
+            })
             ->execute());
 
         $this->assertEquals(6, $result['sum']['value']);
@@ -485,11 +525,15 @@ class MapReduceBuilderTest extends TestCase
         $result = $this->generatorToArray((new MapReduceBuilder())
             ->input(range(1, 100))
             ->context($context)
-            ->map(function ($value, $ctx) {
+            ->map(function ($value, $_ctx) {
                 yield ['group' . ($value % 5), $value];
             })
-            ->reduce(function ($key, $values, $ctx) {
-                return array_sum($values) * $ctx['multiplier'];
+            ->reduce(function ($_key, $valuesIterator, $ctx) {
+                $sum = 0;
+                foreach ($valuesIterator as $value) {
+                    $sum += $value;
+                }
+                return $sum * $ctx['multiplier'];
             })
             ->concurrent(4) // Multiple workers
             ->partitions(8)
@@ -524,7 +568,13 @@ class MapReduceBuilderTest extends TestCase
                     yield [$ctx['config']->label, $value];
                 }
             })
-            ->reduce(fn($k, $v) => array_sum($v))
+            ->reduce(function($_k, $vIterator) {
+                $sum = 0;
+                foreach ($vIterator as $value) {
+                    $sum += $value;
+                }
+                return $sum;
+            })
             ->execute());
 
         // Should sum values > 5: 6+7+8+9+10 = 40

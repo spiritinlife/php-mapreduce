@@ -7,11 +7,11 @@
  * shared data to mapper and reducer functions executing in parallel processes.
  *
  * Before the context feature, you might try:
- *   ->reduce(function($key, $values) use ($sharedData) { ... })
+ *   ->reduce(function($key, $valuesIterator) use ($sharedData) { ... })
  *
  * But this doesn't work in parallel processes! Instead, use:
  *   ->context($sharedData)
- *   ->reduce(function($key, $values, $context) { ... })
+ *   ->reduce(function($key, $valuesIterator, $context) { ... })
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -36,8 +36,10 @@ $results = (new MapReduceBuilder())
             yield ['low', $value];
         }
     })
-    ->reduce(function ($key, $values, $context) {
+    ->reduce(function ($key, $valuesIterator, $context) {
         // Context is also available in reducer
+        // Collect values into array for count and sum operations
+        $values = iterator_to_array($valuesIterator);
         return [
             'category' => $key,
             'count' => count($values),
@@ -88,7 +90,9 @@ $recommendations = (new MapReduceBuilder())
             yield [$product, $purchase['user']];
         }
     })
-    ->reduce(function ($product, $users, $context) {
+    ->reduce(function ($product, $usersIterator, $context) {
+        // Collect users into array for unique and count operations
+        $users = iterator_to_array($usersIterator);
         $uniqueUsers = array_unique($users);
         $popularity = count($uniqueUsers) / $context['totalUsers'];
 
@@ -153,7 +157,9 @@ $analysis = (new MapReduceBuilder())
             'timestamp' => $event['timestamp']
         ]];
     })
-    ->reduce(function ($user, $events, $context) {
+    ->reduce(function ($user, $eventsIterator, $context) {
+        // Collect events into array for array_column and count operations
+        $events = iterator_to_array($eventsIterator);
         $totalWeight = array_sum(array_column($events, 'weight'));
         $eventCount = count($events);
 
