@@ -23,6 +23,7 @@ class Mapper
     protected $partitioner = null;
     protected int $bufferSize;
     protected int $mapperBatchSize;
+    protected ?string $autoloadPath;
 
     /**
      * Create a new Mapper instance
@@ -32,19 +33,22 @@ class Mapper
      * @param callable|null $partitioner Custom partitioner function
      * @param int $bufferSize File I/O buffer size - records buffered before disk flush (default: 1000)
      * @param int $mapperBatchSize Items per worker batch - controls parallelization granularity (default: 500)
+     * @param string|null $autoloadPath Path to autoload file for worker processes (e.g., vendor/autoload.php)
      */
     public function __construct(
         string $workingDir,
         int $concurrency = 4,
         ?callable $partitioner = null,
         int $bufferSize = 1000,
-        int $mapperBatchSize = 500
+        int $mapperBatchSize = 500,
+        ?string $autoloadPath = null
     ) {
         $this->workingDir = $workingDir;
         $this->concurrency = $concurrency;
         $this->partitioner = $partitioner;
         $this->bufferSize = $bufferSize;
         $this->mapperBatchSize = $mapperBatchSize;
+        $this->autoloadPath = $autoloadPath;
     }
 
     /**
@@ -60,6 +64,11 @@ class Mapper
     {
         // Create pool with specified concurrency
         $pool = Pool::create()->concurrency($this->concurrency);
+
+        // Configure autoload if provided
+        if ($this->autoloadPath !== null) {
+            $pool->autoload($this->autoloadPath);
+        }
 
         $chunk = [];
         $chunkIndex = 0;

@@ -20,17 +20,20 @@ class Reducer
 {
     protected int $concurrency;
     protected string $workingDir;
+    protected ?string $autoloadPath;
 
     /**
      * Create a new Reducer instance
      *
      * @param int $concurrency Number of concurrent workers
      * @param string|null $workingDir Directory for temporary files
+     * @param string|null $autoloadPath Path to autoload file for worker processes (e.g., vendor/autoload.php)
      */
-    public function __construct(int $concurrency = 4, ?string $workingDir = null)
+    public function __construct(int $concurrency = 4, ?string $workingDir = null, ?string $autoloadPath = null)
     {
         $this->concurrency = $concurrency;
         $this->workingDir = $workingDir ?? sys_get_temp_dir();
+        $this->autoloadPath = $autoloadPath;
     }
 
     /**
@@ -44,6 +47,11 @@ class Reducer
     public function reduce(array $shuffledFiles, callable $reducer, $context = null): \Generator
     {
         $pool = Pool::create()->concurrency($this->concurrency);
+
+        // Configure autoload if provided
+        if ($this->autoloadPath !== null) {
+            $pool->autoload($this->autoloadPath);
+        }
 
         foreach ($shuffledFiles as $index => $filename) {
             $pool->add(function () use ($index, $filename, $reducer, $context) {

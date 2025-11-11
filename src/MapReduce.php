@@ -25,6 +25,7 @@ class MapReduce
     protected int $shuffleChunkSize;
     protected int $bufferSize;
     protected int $mapperBatchSize;
+    protected ?string $autoloadPath;
     protected Mapper $mapper;
     protected Shuffler $shuffler;
     protected Reducer $reducer;
@@ -53,13 +54,15 @@ class MapReduce
      * @param int $shuffleChunkSize Records per chunk in shuffle external sort (default: 10000)
      * @param int $bufferSize File I/O buffer size in records (default: 1000)
      * @param int $mapperBatchSize Items per mapper worker batch (default: 500)
+     * @param string|null $autoloadPath Path to autoload file for worker processes (e.g., vendor/autoload.php)
      */
     public function __construct(
         int $concurrency = 4,
         ?string $workingDir = null,
         int $shuffleChunkSize = 10000,
         int $bufferSize = 1000,
-        int $mapperBatchSize = 500
+        int $mapperBatchSize = 500,
+        ?string $autoloadPath = null
     ) {
         if ($concurrency < 1) {
             throw new \InvalidArgumentException('Concurrency must be at least 1');
@@ -81,6 +84,7 @@ class MapReduce
         $this->shuffleChunkSize = $shuffleChunkSize;
         $this->bufferSize = $bufferSize;
         $this->mapperBatchSize = $mapperBatchSize;
+        $this->autoloadPath = $autoloadPath;
         $this->workingDir = $workingDir ?? sys_get_temp_dir() . '/mapreduce_' . uniqid('mr_', true);
 
         if (!is_dir($this->workingDir) && !mkdir($this->workingDir, 0755, true)) {
@@ -88,9 +92,9 @@ class MapReduce
         }
 
         // Initialize the three pipeline components
-        $this->mapper = new Mapper($this->workingDir, $this->concurrency, null, $this->bufferSize, $this->mapperBatchSize);
+        $this->mapper = new Mapper($this->workingDir, $this->concurrency, null, $this->bufferSize, $this->mapperBatchSize, $this->autoloadPath);
         $this->shuffler = new Shuffler($this->workingDir, $this->shuffleChunkSize, $this->bufferSize, $this->concurrency);
-        $this->reducer = new Reducer($this->concurrency, $this->workingDir);
+        $this->reducer = new Reducer($this->concurrency, $this->workingDir, $this->autoloadPath);
     }
 
     /**
@@ -101,7 +105,7 @@ class MapReduce
      */
     public function withPartitioner(callable $partitioner): self
     {
-        $this->mapper = new Mapper($this->workingDir, $this->concurrency, $partitioner, $this->bufferSize, $this->mapperBatchSize);
+        $this->mapper = new Mapper($this->workingDir, $this->concurrency, $partitioner, $this->bufferSize, $this->mapperBatchSize, $this->autoloadPath);
         return $this;
     }
 

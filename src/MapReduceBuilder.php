@@ -29,6 +29,7 @@ class MapReduceBuilder
     protected int $mapperBatchSize = 500;
     /** @var mixed */
     protected $context = null;
+    protected ?string $autoloadPath = null;
 
     /**
      * Set the input data source
@@ -289,6 +290,27 @@ class MapReduceBuilder
     }
 
     /**
+     * Set the autoload path for parallel worker processes
+     *
+     * When using parallel processing with spatie/async, worker processes are spawned
+     * in separate contexts and need to load dependencies. This method allows you to
+     * specify the path to your autoloader (typically vendor/autoload.php).
+     *
+     * Example:
+     * ```php
+     * ->autoload(__DIR__ . '/vendor/autoload.php')
+     * ```
+     *
+     * @param string $path Path to the autoload file (e.g., vendor/autoload.php)
+     * @return self
+     */
+    public function autoload(string $path): self
+    {
+        $this->autoloadPath = $path;
+        return $this;
+    }
+
+    /**
      * Execute the MapReduce job
      *
      * @return \Generator<string, array{key: mixed, value: mixed}> Generator yielding final results keyed by reduce keys
@@ -313,7 +335,8 @@ class MapReduceBuilder
             $this->workingDir,
             $this->shuffleChunkSize,
             $this->bufferSize,
-            $this->mapperBatchSize
+            $this->mapperBatchSize,
+            $this->autoloadPath
         );
 
         if ($this->partitioner !== null) {
