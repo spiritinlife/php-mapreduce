@@ -67,6 +67,8 @@ Input → [Parallel Map Workers] → [Parallel Shuffle & Sort] → [Parallel Red
 
 Each phase uses `spatie/async` to spawn separate PHP processes, enabling true CPU parallelism for compute-intensive operations.
 
+> **⚠️ Important:** Because mapper and reducer functions run in separate processes, you **cannot use closure `use` clauses** to access external variables. Use the `context()` method instead. See [Parallel Processing & Context](#parallel-processing--context) for details.
+
 ## Input Types
 
 MapReduce accepts any iterable as input - arrays, generators, iterators, or custom iterables.
@@ -414,6 +416,152 @@ foreach ($stats as $key => $count) {
 }
 ```
 
+### Using Context for Shared Data
+
+```php
+// Pre-calculated lookup tables or configuration
+$userTiers = ['alice' => 'gold', 'bob' => 'silver', 'charlie' => 'bronze'];
+$tierMultipliers = ['gold' => 1.5, 'silver' => 1.2, 'bronze' => 1.0];
+
+$purchases = [
+    ['user' => 'alice', 'amount' => 100],
+    ['user' => 'bob', 'amount' => 150],
+    ['user' => 'charlie', 'amount' => 200],
+];
+
+$results = (new MapReduceBuilder())
+    ->input($purchases)
+    // Pass shared data via context (not via 'use' clause!)
+    ->context([
+        'userTiers' => $userTiers,
+        'tierMultipliers' => $tierMultipliers,
+    ])
+    ->map(function ($purchase, $context) {
+        // Access context data in mapper
+        $tier = $context['userTiers'][$purchase['user']] ?? 'bronze';
+        $multiplier = $context['tierMultipliers'][$tier];
+        $bonusPoints = $purchase['amount'] * $multiplier;
+
+        yield [$purchase['user'], $bonusPoints];
+    })
+    ->reduce(function ($user, $points, $context) {
+        // Context also available in reducer
+        $tier = $context['userTiers'][$user];
+        return [
+            'total_points' => array_sum($points),
+            'tier' => $tier,
+        ];
+    })
+    ->execute();
+
+foreach ($results as $user => $data) {
+    echo "{$user} ({$data['tier']}): {$data['total_points']} points\n";
+}
+```
+
+## Parallel Processing & Context
+
+### Important: Closure `use` Clauses Don't Work
+
+Because MapReduce uses **true parallel processing with separate PHP processes** (via `spatie/async`), variables captured with `use` clauses are **NOT available** in mapper and reducer functions.
+
+```php
+// ❌ BROKEN - Variables won't be available in parallel processes
+$totalUsers = 1000;
+$lookupTable = ['a' => 1, 'b' => 2];
+
+(new MapReduceBuilder())
+    ->input($data)
+    ->map(function ($item) use ($lookupTable) {
+        // ❌ $lookupTable will be NULL or empty here!
+        $value = $lookupTable[$item['key']];  // Won't work!
+        yield [$item['key'], $value];
+    })
+    ->reduce(function ($key, $values) use ($totalUsers) {
+        // ❌ $totalUsers will be NULL or 0 here!
+        $percentage = array_sum($values) / $totalUsers;  // Won't work!
+        return $percentage;
+    })
+    ->execute();
+```
+
+### Solution: Use `context()` Method
+
+Pass data via the `context()` method, which serializes and provides it to all workers:
+
+```php
+// ✅ CORRECT - Use context() to pass data
+$totalUsers = 1000;
+$lookupTable = ['a' => 1, 'b' => 2];
+
+(new MapReduceBuilder())
+    ->input($data)
+    ->context([
+        'totalUsers' => $totalUsers,
+        'lookupTable' => $lookupTable,
+        'config' => ['threshold' => 50]
+    ])
+    ->map(function ($item, $context) {
+        // ✅ Access via $context parameter
+        $value = $context['lookupTable'][$item['key']];
+        yield [$item['key'], $value];
+    })
+    ->reduce(function ($key, $values, $context) {
+        // ✅ Context available in reducer too
+        $percentage = array_sum($values) / $context['totalUsers'];
+        return $percentage;
+    })
+    ->execute();
+```
+
+### Context Guidelines
+
+**What can be passed as context:**
+- Arrays, scalars (int, float, string, bool)
+- Objects (as long as they're serializable - no resources, DB connections, or file handles)
+- Nested data structures
+- Class constants and configuration values
+
+**Best practices:**
+- Keep context reasonably sized (< 100MB recommended) - it's serialized to each worker
+- Context is read-only - changes in one worker won't affect others
+- All data must be serializable (no resources, closures, or database connections)
+
+**Real-world example (collaborative filtering):**
+
+```php
+// Phase 1: Calculate counts (stored in memory)
+$totalBuyers = 10000;
+$eventCounts = [
+    'follow' => ['seller1' => 500, 'seller2' => 300],
+    'purchase' => ['seller1' => 200, 'seller2' => 150],
+];
+
+// Phase 2: Use counts to calculate scores with MapReduce
+$results = (new MapReduceBuilder())
+    ->input($cooccurrences)
+    ->context([
+        'totalBuyers' => $totalBuyers,
+        'eventCounts' => $eventCounts,
+        'minScore' => 5.0
+    ])
+    ->reduce(function ($key, $values, $context) {
+        // Extract shared data from context
+        $totalBuyers = $context['totalBuyers'];
+        $eventCounts = $context['eventCounts'];
+
+        // Use in calculations
+        $score = calculateScore($values, $totalBuyers, $eventCounts);
+
+        if ($score >= $context['minScore']) {
+            return ['score' => $score, 'count' => count($values)];
+        }
+
+        return null;
+    })
+    ->execute();
+```
+
 ## Performance Tuning
 
 ### Quick Reference
@@ -484,9 +632,10 @@ composer cs-check       # Code style check (PSR-12)
 
 ## Limitations
 
-- Single machine only (not a distributed cluster)
-- Requires disk space for intermediate files
-- Process spawning overhead makes it inefficient for tiny datasets (<1000 records)
+- **Single machine only** (not a distributed cluster)
+- **Requires disk space** for intermediate files
+- **Process spawning overhead** makes it inefficient for tiny datasets (<1000 records)
+- **Closure `use` clauses don't work** in mapper/reducer functions due to parallel processing - use `context()` method instead (see [Parallel Processing & Context](#parallel-processing--context))
 
 ## License
 
