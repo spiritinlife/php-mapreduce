@@ -22,8 +22,9 @@ class MapReduce
 {
     protected string $workingDir;
     protected int $concurrency;
-    protected int $chunkSize;
+    protected int $shuffleChunkSize;
     protected int $bufferSize;
+    protected int $mapperBatchSize;
     protected Mapper $mapper;
     protected Shuffler $shuffler;
     protected Reducer $reducer;
@@ -31,32 +32,55 @@ class MapReduce
     /**
      * Create a new MapReduce instance
      *
-     * @param int $concurrency Number of concurrent workers (default: 4)
+     * Configuration Parameters:
+     * - concurrency: Number of parallel worker processes (default: 4)
+     *   Higher = more parallelism, but more overhead. Match to CPU cores for best performance.
+     *
+     * - shuffleChunkSize: Records per chunk during shuffle sort phase (default: 10000)
+     *   Controls memory usage during external sorting. Larger = faster sorting, more memory.
+     *   Recommended: 5K-50K depending on record size and available memory.
+     *
+     * - bufferSize: Records buffered in memory before flushing to disk (default: 1000)
+     *   Affects I/O performance. Larger = fewer syscalls, more memory per partition.
+     *   Memory impact: ~(bufferSize × avg_record_size × num_partitions) bytes.
+     *
+     * - mapperBatchSize: Items sent to each parallel worker batch (default: 500)
+     *   Controls parallelization granularity. Smaller = better load balancing, more overhead.
+     *   Larger = less overhead, but potential uneven work distribution.
+     *
+     * @param int $concurrency Number of concurrent worker processes (default: 4)
      * @param string|null $workingDir Directory for temporary files (default: system temp)
-     * @param int $chunkSize Number of records to process per chunk in shuffle phase (default: 10000)
-     * @param int $bufferSize Number of records to buffer before flushing to disk (default: 1000)
+     * @param int $shuffleChunkSize Records per chunk in shuffle external sort (default: 10000)
+     * @param int $bufferSize File I/O buffer size in records (default: 1000)
+     * @param int $mapperBatchSize Items per mapper worker batch (default: 500)
      */
     public function __construct(
         int $concurrency = 4,
         ?string $workingDir = null,
-        int $chunkSize = 10000,
-        int $bufferSize = 1000
+        int $shuffleChunkSize = 10000,
+        int $bufferSize = 1000,
+        int $mapperBatchSize = 500
     ) {
         if ($concurrency < 1) {
             throw new \InvalidArgumentException('Concurrency must be at least 1');
         }
 
-        if ($chunkSize < 1) {
-            throw new \InvalidArgumentException('Chunk size must be at least 1');
+        if ($shuffleChunkSize < 1) {
+            throw new \InvalidArgumentException('Shuffle chunk size must be at least 1');
         }
 
         if ($bufferSize < 1) {
             throw new \InvalidArgumentException('Buffer size must be at least 1');
         }
 
+        if ($mapperBatchSize < 1) {
+            throw new \InvalidArgumentException('Mapper batch size must be at least 1');
+        }
+
         $this->concurrency = $concurrency;
-        $this->chunkSize = $chunkSize;
+        $this->shuffleChunkSize = $shuffleChunkSize;
         $this->bufferSize = $bufferSize;
+        $this->mapperBatchSize = $mapperBatchSize;
         $this->workingDir = $workingDir ?? sys_get_temp_dir() . '/mapreduce_' . uniqid('mr_', true);
 
         if (!is_dir($this->workingDir) && !mkdir($this->workingDir, 0755, true)) {
@@ -64,9 +88,9 @@ class MapReduce
         }
 
         // Initialize the three pipeline components
-        $this->mapper = new Mapper($this->workingDir, $this->concurrency, null, $this->bufferSize);
-        $this->shuffler = new Shuffler($this->workingDir, $this->chunkSize, $this->bufferSize);
-        $this->reducer = new Reducer();
+        $this->mapper = new Mapper($this->workingDir, $this->concurrency, null, $this->bufferSize, $this->mapperBatchSize);
+        $this->shuffler = new Shuffler($this->workingDir, $this->shuffleChunkSize, $this->bufferSize, $this->concurrency);
+        $this->reducer = new Reducer($this->concurrency, $this->workingDir);
     }
 
     /**
@@ -77,7 +101,7 @@ class MapReduce
      */
     public function withPartitioner(callable $partitioner): self
     {
-        $this->mapper = new Mapper($this->workingDir, $this->concurrency, $partitioner, $this->bufferSize);
+        $this->mapper = new Mapper($this->workingDir, $this->concurrency, $partitioner, $this->bufferSize, $this->mapperBatchSize);
         return $this;
     }
 

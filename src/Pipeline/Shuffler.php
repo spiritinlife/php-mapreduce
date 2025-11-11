@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Spiritinlife\MapReduce\Pipeline;
 
+use Spatie\Async\Pool;
 use Spiritinlife\MapReduce\Utils\BufferedFileReader;
 use Spiritinlife\MapReduce\Utils\BufferedFileWriter;
 use Spiritinlife\MapReduce\Utils\MergeMinHeap;
-
-use function Amp\async;
-use function Amp\Future\await;
 
 /**
  * Shuffler component for MapReduce pipeline
@@ -25,6 +23,7 @@ class Shuffler
     private string $workingDir;
     private int $chunkSize;
     private int $bufferSize;
+    private int $concurrency;
 
     /**
      * Create a new Shuffler
@@ -32,15 +31,18 @@ class Shuffler
      * @param string $workingDir Directory for temporary files
      * @param int $chunkSize Number of records to process in each chunk
      * @param int $bufferSize Number of records to buffer before flushing (default: 1000)
+     * @param int $concurrency Number of concurrent workers (default: 4)
      */
     public function __construct(
         string $workingDir,
         int $chunkSize = 10000,
-        int $bufferSize = 1000
+        int $bufferSize = 1000,
+        int $concurrency = 4
     ) {
         $this->workingDir = $workingDir;
         $this->chunkSize = $chunkSize;
         $this->bufferSize = $bufferSize;
+        $this->concurrency = $concurrency;
     }
 
     /**
@@ -52,17 +54,31 @@ class Shuffler
      */
     public function shuffle(array $mapOutputFiles, int $numPartitions): array
     {
-        // Create async tasks for each partition shuffle
-        $futures = [];
+        $pool = Pool::create()->concurrency($this->concurrency);
+
         for ($partition = 0; $partition < $numPartitions; $partition++) {
             $inputFiles = $mapOutputFiles[$partition] ?? [];
-            $futures[] = async(function () use ($partition, $inputFiles) {
-                return $this->shufflePartition($partition, $inputFiles);
+
+            $pool->add(function () use ($partition, $inputFiles) {
+                return [
+                    'partition' => $partition,
+                    'file' => $this->shufflePartition($partition, $inputFiles)
+                ];
             });
         }
 
-        // Wait for all partitions to complete
-        return await($futures);
+        $results = $pool->wait();
+
+        // Convert results to properly indexed array
+        $shuffledFiles = [];
+        foreach ($results as $result) {
+            $shuffledFiles[$result['partition']] = $result['file'];
+        }
+
+        // Ensure all partitions are present in the correct order
+        ksort($shuffledFiles);
+
+        return $shuffledFiles;
     }
 
     /**

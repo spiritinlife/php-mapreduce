@@ -556,7 +556,7 @@ class MapReduceTest extends TestCase
     public function testInvalidChunkSizeThrowsException(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Chunk size must be at least 1');
+        $this->expectExceptionMessage('Shuffle chunk size must be at least 1');
 
         (new MapReduceBuilder())
             ->chunkSize(0);
@@ -633,7 +633,7 @@ class MapReduceTest extends TestCase
     public function testConstructorWithInvalidChunkSize(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Chunk size must be at least 1');
+        $this->expectExceptionMessage('Shuffle chunk size must be at least 1');
 
         new MapReduce(2, null, 0);
     }

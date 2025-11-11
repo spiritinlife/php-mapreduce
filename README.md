@@ -1,15 +1,16 @@
 # PHP MapReduce
 
-A high-performance, framework-agnostic MapReduce implementation for PHP that processes large datasets using parallel workers and disk-based storage.
+A high-performance, framework-agnostic MapReduce implementation for PHP that processes large datasets using **true parallel processing** with separate PHP worker processes and disk-based storage.
 
 [![PHP Version](https://img.shields.io/badge/php-%5E8.1-blue)](https://www.php.net/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ## Why Use This?
 
+- **True CPU parallelism** - spawns separate PHP processes for parallel execution, not async coroutines
 - Process datasets larger than RAM using memory-efficient disk storage
 - **Stream iterators without loading into memory** - process large files, database cursors, and API responses efficiently
-- Utilize multiple CPU cores for true parallel processing
+- Utilize multiple CPU cores for CPU-intensive transformations
 - Framework-agnostic - works with any PHP project
 - Handle millions of records with predictable memory usage
 
@@ -54,15 +55,17 @@ foreach ($results as $word => $count) {
 
 ## How It Works
 
-MapReduce processes data in three parallel phases:
+MapReduce processes data in three parallel phases using separate PHP worker processes:
 
-1. **Map Phase** - Input is split and processed in parallel. Each worker emits key-value pairs to partitioned temporary files.
-2. **Shuffle Phase** - Partitions are sorted and grouped in parallel using memory-efficient external sorting.
-3. **Reduce Phase** - Partitions are processed in parallel, aggregating values by key.
+1. **Map Phase** - Input is streamed in batches to parallel worker processes. Each worker emits key-value pairs to partitioned temporary files.
+2. **Shuffle Phase** - Partitions are sorted and grouped in parallel using memory-efficient external sorting with separate worker processes.
+3. **Reduce Phase** - Partitions are processed in parallel by worker processes, aggregating values by key.
 
 ```
-Input → [Parallel Map] → [Parallel Shuffle & Sort] → [Parallel Reduce] → Results
+Input → [Parallel Map Workers] → [Parallel Shuffle & Sort] → [Parallel Reduce Workers] → Results
 ```
+
+Each phase uses `spatie/async` to spawn separate PHP processes, enabling true CPU parallelism for compute-intensive operations.
 
 ## Input Types
 
@@ -203,14 +206,16 @@ Run the job and return results as a generator
 ### Configuration Methods (Optional)
 
 #### `concurrent(int $workers)`
-Number of parallel workers. Default: `4`
+Number of parallel worker processes. Default: `4`
 
 ```php
-->concurrent(8)  // Use 8 CPU cores
+->concurrent(8)  // Spawn 8 parallel PHP processes
 ```
 
+**Tip:** Match your CPU core count. For I/O-bound tasks, you can use 2-3x cores.
+
 #### `partitions(int $count)`
-Number of reduce partitions. Default: same as `concurrent()`
+Number of reduce partitions for parallel processing. Default: same as `concurrent()`
 
 ```php
 ->partitions(16)  // More parallelism in reduce phase
@@ -218,41 +223,80 @@ Number of reduce partitions. Default: same as `concurrent()`
 
 **Tip:** Use 1-2x concurrency level. More partitions = better parallelism but more overhead.
 
-#### `chunkSize(int $records)`
-**Controls:** Memory usage during shuffle phase sorting. Default: `10000`
+#### `mapperBatchSize(int $items)`
+**Controls:** Items sent to each parallel worker process. Default: `500`
 
-Determines how many records accumulate in memory before being sorted and written as a chunk file during external sorting. This only affects the shuffle phase.
+Determines how many input items are batched together and sent to a worker process. This is **critical for memory management** because it affects how many tasks the parent process creates.
 
 ```php
-->chunkSize(50000)   // High-memory system
-->chunkSize(2000)    // Memory-constrained
+->mapperBatchSize(2000)   // Large datasets - reduce process overhead
+->mapperBatchSize(100)    // Small datasets - better load balancing
 ```
 
-**Memory impact:** `chunkSize × average_record_size` bytes per sort operation
+**Tradeoffs:**
+- **Smaller batches** = Better load balancing, **MORE tasks = MORE parent memory**
+- **Larger batches** = Less overhead, fewer tasks, **LESS parent memory**
+
+**Guidelines:**
+- Small datasets (<10K records): 100-500 (default)
+- Medium datasets (10K-100K): 500-2,000
+- Large datasets (100K-1M): 2,000-5,000
+- Very large datasets (>1M): 5,000-10,000
+
+> **⚠️ Critical: Batch Size vs Memory**
+>
+> Parent process memory is proportional to the **number of tasks**, not dataset size:
+> - 1M records ÷ 500 batch = **2,000 tasks** (may use 100MB+ parent memory)
+> - 1M records ÷ 5,000 batch = **200 tasks** (uses ~10MB parent memory)
+>
+> **For large datasets (>100K records), use larger batch sizes to reduce parent process memory overhead.**
+
+#### `shuffleChunkSize(int $records)`
+**Controls:** Memory usage during shuffle phase external sorting. Default: `10000`
+
+Determines how many records accumulate in memory before being sorted and written as a chunk file during external sorting. Only affects the shuffle phase.
+
+```php
+->shuffleChunkSize(50000)   // High-memory system - faster sorting
+->shuffleChunkSize(2000)    // Memory-constrained
+```
+
+**Memory impact:** `shuffleChunkSize × average_record_size` bytes per sort operation
+
+**Guidelines:**
+- Small datasets (<100K): 5,000-10,000
+- Medium datasets (100K-1M): 10,000-50,000 (default: 10,000)
+- Large datasets (>1M): 50,000-100,000
 
 #### `bufferSize(int $records)`
-**Controls:** I/O write buffering across all phases (map, shuffle, reduce). Default: `1000`
+**Controls:** File I/O write buffering across all phases. Default: `1000`
 
-Determines how many records are buffered in memory before flushing to disk. Affects the frequency of `fwrite()` system calls. Used by all phases, not just shuffle.
+Determines how many records are buffered in memory before flushing to disk. Affects the frequency of `fwrite()` system calls. Used by map, shuffle, and reduce phases.
 
 ```php
 ->bufferSize(5000)   // Large datasets, plenty of RAM
 ->bufferSize(500)    // Memory-constrained
 ```
 
-**Memory impact:** `bufferSize × average_record_size` bytes per writer (multiple writers in map phase)
+**Memory impact:** `bufferSize × average_record_size × num_partitions` bytes in map phase (each partition has its own buffer)
 
 **Guidelines:**
 - Small datasets (<10K): 100-500
-- Medium datasets (10K-1M): 1000-5000
+- Medium datasets (10K-1M): 1000-5000 (default: 1000)
 - Large datasets (>1M): 5000-10000
 
-> **💡 Why Two Parameters?**
+> **💡 Three Independent Parameters:**
 >
-> - **`chunkSize`** controls sorting granularity (shuffle only) - larger values create fewer chunk files to merge
-> - **`bufferSize`** controls write batching (all phases) - larger values reduce system calls
+> - **`mapperBatchSize`** - Controls worker granularity & **parent memory** (map phase only)
+> - **`shuffleChunkSize`** - Controls sorting memory (shuffle phase only)
+> - **`bufferSize`** - Controls write batching (all phases)
 >
-> These are independent memory concerns. For example, in the shuffle phase, a 10,000-record chunk will be written in ~10 buffer flushes if bufferSize=1000.
+> These handle different concerns:
+> - Large `mapperBatchSize` reduces process spawning overhead **AND parent memory** (critical for >100K records)
+> - Large `shuffleChunkSize` creates fewer chunk files to merge
+> - Large `bufferSize` reduces system call overhead
+>
+> **Most impactful for large datasets:** Increase `mapperBatchSize` first!
 
 #### `workingDirectory(string $path)`
 Directory for temporary files. Default: system temp
@@ -351,43 +395,52 @@ foreach ($stats as $key => $count) {
 
 ```php
 (new MapReduceBuilder())
-    ->concurrent(8)              // CPU cores (or 2-3x for I/O tasks)
-    ->partitions(16)             // 1-2x concurrency
-    ->chunkSize(50000)           // Shuffle sort memory (larger = fewer merges)
-    ->bufferSize(5000)           // Write buffer across all phases (larger = fewer syscalls)
-    ->workingDirectory('/ssd')   // Use fast storage for large jobs
+    ->concurrent(8)                  // CPU cores (or 2-3x for I/O tasks)
+    ->partitions(16)                 // 1-2x concurrency for reduce parallelism
+    ->mapperBatchSize(2000)          // Items per worker batch (larger = less overhead)
+    ->shuffleChunkSize(50000)        // Shuffle sort memory (larger = fewer merges)
+    ->bufferSize(5000)               // Write buffer (larger = fewer syscalls)
+    ->workingDirectory('/ssd')       // Use fast storage for large jobs
 ```
 
 ### Memory vs Performance
 
 **Low Memory System (2GB RAM):**
 ```php
-->chunkSize(2000)    // Small sort chunks
-->bufferSize(500)    // Small write buffers
+->mapperBatchSize(200)       // Small batches to reduce serialization
+->shuffleChunkSize(2000)     // Small sort chunks
+->bufferSize(500)            // Small write buffers
 ```
 
 **High Performance System (SSD, 32GB RAM):**
 ```php
-->chunkSize(100000)  // Large sort chunks for fast sorting
-->bufferSize(10000)  // Large buffers to minimize disk I/O
+->mapperBatchSize(5000)      // Large batches to reduce process overhead
+->shuffleChunkSize(100000)   // Large sort chunks for fast sorting
+->bufferSize(10000)          // Large buffers to minimize disk I/O
 ->workingDirectory('/mnt/fast-ssd/tmp')
 ```
 
 **Tuning independently:**
+- **Large dataset (>100K records)? CRITICAL: Increase `mapperBatchSize`** to drastically reduce parent process memory (can drop from 100MB+ to <10MB)
 - Slow disk? Increase `bufferSize` to batch more writes
-- Limited RAM during shuffle? Decrease `chunkSize` to reduce sort memory
-- Many concurrent map workers? Decrease `bufferSize` (memory = workers × partitions × bufferSize)
+- Limited RAM during shuffle? Decrease `shuffleChunkSize` to reduce sort memory
+- Many concurrent workers + partitions? Decrease `bufferSize` (memory = workers × partitions × bufferSize)
+- Parent process using too much memory? Increase `mapperBatchSize` (fewer tasks = less overhead)
 
 ### Benchmarks
 
-Tested on Apple M2 Pro (10-core), 16GB RAM, SSD:
+Tested on Apple M2 Pro (10-core), 16GB RAM, SSD with `spatie/async` parallel processing:
 
-| Records | Concurrency | Time  | Memory |
-|---------|-------------|-------|--------|
-| 10K     | 4           | 0.3s  | 2MB    |
-| 100K    | 4           | 2.9s  | 6MB    |
-| 1M      | 8           | 33s   | 8MB    |
-| 10M     | 8           | 6m12s | 73MB   |
+| Records | Concurrency | Time  | Parent Memory* | Batch Size |
+|---------|-------------|-------|----------------|------------|
+| 10K     | 4           | 0.3s  | 6MB            | 500        |
+| 100K    | 4           | 1.2s  | 0MB            | 2,000      |
+| 1M      | 8           | 7.9s  | 8MB            | 5,000      |
+| 10M     | 8           | 1m23s | 10MB           | 5,000      |
+
+*Parent process memory only - worker processes use separate memory space
+
+**Key Insight:** Using larger `mapperBatchSize` for datasets >100K dramatically reduces parent memory (from 100MB+ to <10MB) by creating fewer tasks. See the critical callout in `mapperBatchSize()` documentation above.
 
 Run your own benchmarks:
 ```bash

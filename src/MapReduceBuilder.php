@@ -24,8 +24,9 @@ class MapReduceBuilder
     protected int $concurrency = 4;
     protected ?int $reducePartitions = null;
     protected ?string $workingDir = null;
-    protected int $chunkSize = 10000;
+    protected int $shuffleChunkSize = 10000;
     protected int $bufferSize = 1000;
+    protected int $mapperBatchSize = 500;
 
     /**
      * Set the input data source
@@ -155,21 +156,68 @@ class MapReduceBuilder
     }
 
     /**
-     * Set the chunk size for shuffle phase processing
+     * Set the shuffle chunk size for external sorting during shuffle phase
      *
-     * Controls memory usage during the shuffle phase. Larger chunks = better performance
-     * but higher memory usage. Smaller chunks = lower memory but more I/O overhead.
+     * Controls memory usage during the shuffle phase's external sorting.
+     * The shuffler reads input files, sorts records in memory chunks, then merges them.
      *
-     * @param int $size Number of records to process per chunk (default: 10000)
+     * Larger chunks = better sorting performance, higher memory usage
+     * Smaller chunks = lower memory, more merge overhead
+     *
+     * Recommended values:
+     * - Small datasets (<100K records): 5,000-10,000
+     * - Medium datasets (100K-1M): 10,000-50,000 (default: 10,000)
+     * - Large datasets (>1M): 50,000-100,000
+     * - Memory constrained: 1,000-5,000
+     *
+     * @param int $size Number of records per shuffle sort chunk (default: 10000)
      * @return self
+     */
+    public function shuffleChunkSize(int $size): self
+    {
+        if ($size < 1) {
+            throw new \InvalidArgumentException('Shuffle chunk size must be at least 1');
+        }
+
+        $this->shuffleChunkSize = $size;
+        return $this;
+    }
+
+    /**
+     * DEPRECATED: Use shuffleChunkSize() instead
+     * @deprecated Use shuffleChunkSize() for clarity
      */
     public function chunkSize(int $size): self
     {
+        return $this->shuffleChunkSize($size);
+    }
+
+    /**
+     * Set the mapper batch size for parallel processing
+     *
+     * Controls how many input items are sent to each parallel worker process.
+     * This affects parallelization granularity and overhead.
+     *
+     * Smaller batches = better load balancing, more process overhead
+     * Larger batches = less overhead, potential uneven distribution
+     *
+     * Recommended values:
+     * - Small datasets (<10K records): 100-500 (default: 500)
+     * - Medium datasets (10K-1M): 500-2,000
+     * - Large datasets (>1M): 1,000-5,000
+     * - Many small records: 1,000+
+     * - Large complex records: 100-500
+     *
+     * @param int $size Items per parallel worker batch (default: 500)
+     * @return self
+     */
+    public function mapperBatchSize(int $size): self
+    {
         if ($size < 1) {
-            throw new \InvalidArgumentException('Chunk size must be at least 1');
+            throw new \InvalidArgumentException('Mapper batch size must be at least 1');
         }
 
-        $this->chunkSize = $size;
+        $this->mapperBatchSize = $size;
         return $this;
     }
 
@@ -228,8 +276,9 @@ class MapReduceBuilder
         $mapReduce = new MapReduce(
             $this->concurrency,
             $this->workingDir,
-            $this->chunkSize,
-            $this->bufferSize
+            $this->shuffleChunkSize,
+            $this->bufferSize,
+            $this->mapperBatchSize
         );
 
         if ($this->partitioner !== null) {

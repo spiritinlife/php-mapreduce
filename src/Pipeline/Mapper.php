@@ -4,17 +4,14 @@ declare(strict_types=1);
 
 namespace Spiritinlife\MapReduce\Pipeline;
 
-use Amp\Pipeline\Queue;
+use Spatie\Async\Pool;
 use Spiritinlife\MapReduce\Utils\BufferedFileWriter;
-
-use function Amp\async;
-use function Amp\Future\await;
 
 /**
  * Mapper component for MapReduce pipeline
  *
- * Handles the map phase: processes input data concurrently and writes
- * intermediate results to partitioned files.
+ * Handles the map phase: processes input data in parallel using true
+ * process-based concurrency and writes intermediate results to partitioned files.
  *
  * @package Spiritinlife\MapReduce
  */
@@ -25,25 +22,29 @@ class Mapper
     /** @var callable|null */
     protected $partitioner = null;
     protected int $bufferSize;
+    protected int $mapperBatchSize;
 
     /**
      * Create a new Mapper instance
      *
      * @param string $workingDir Directory for temporary files
-     * @param int $concurrency Number of concurrent workers
+     * @param int $concurrency Number of concurrent worker processes
      * @param callable|null $partitioner Custom partitioner function
-     * @param int $bufferSize Number of records to buffer before flushing (default: 1000)
+     * @param int $bufferSize File I/O buffer size - records buffered before disk flush (default: 1000)
+     * @param int $mapperBatchSize Items per worker batch - controls parallelization granularity (default: 500)
      */
     public function __construct(
         string $workingDir,
         int $concurrency = 4,
         ?callable $partitioner = null,
-        int $bufferSize = 1000
+        int $bufferSize = 1000,
+        int $mapperBatchSize = 500
     ) {
         $this->workingDir = $workingDir;
         $this->concurrency = $concurrency;
         $this->partitioner = $partitioner;
         $this->bufferSize = $bufferSize;
+        $this->mapperBatchSize = $mapperBatchSize;
     }
 
     /**
@@ -56,31 +57,49 @@ class Mapper
      */
     public function map(iterable $input, callable $mapper, int $reducePartitions): array
     {
-        // Queue enables concurrent work distribution via iterate()
-        // Multiple workers can safely consume from the same iterator (work-stealing pattern)
-        $queue = new Queue();
-        $iterator = $queue->iterate();
+        // Create pool with specified concurrency
+        $pool = Pool::create()->concurrency($this->concurrency);
 
-        // Producer coroutine: push() provides backpressure - blocks until item is consumed
-        // This prevents loading entire iterator into memory
-        async(function () use ($input, $queue) {
-            foreach ($input as $value) {
-                $queue->push($value);
+        $chunk = [];
+        $chunkIndex = 0;
+
+        // Capture these in local variables for serialization
+        $workingDir = $this->workingDir;
+        $bufferSize = $this->bufferSize;
+        $partitioner = $this->partitioner;
+
+        // Stream chunks to workers as they arrive
+        foreach ($input as $item) {
+            $chunk[] = $item;
+
+            if (count($chunk) === $this->mapperBatchSize) {
+                // Create a copy of chunk for the closure
+                $chunkCopy = $chunk;
+                $currentChunkIndex = $chunkIndex;
+
+                $pool->add(function () use ($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner) {
+                    return self::processChunk($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner);
+                });
+
+                $chunk = [];
+                $chunkIndex++;
             }
-            $queue->complete();
-        });
+        }
 
-        // Spawn concurrent worker coroutines that share the iterator
-        // Each worker pulls unique items - no duplication across workers
-        $futures = [];
-        for ($workerIndex = 0; $workerIndex < $this->concurrency; $workerIndex++) {
-            $futures[] = async(function () use ($iterator, $workerIndex, $mapper, $reducePartitions) {
-                return $this->processWorker($iterator, $workerIndex, $mapper, $reducePartitions);
+        // Process remaining items
+        if (!empty($chunk)) {
+            $chunkCopy = $chunk;
+            $currentChunkIndex = $chunkIndex;
+
+            $pool->add(function () use ($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner) {
+                return self::processChunk($chunkCopy, $currentChunkIndex, $mapper, $reducePartitions, $workingDir, $bufferSize, $partitioner);
             });
         }
 
-        $workerResults = await($futures);
+        // Wait for all tasks to complete and collect results
+        $workerResults = $pool->wait();
 
+        // Aggregate results by partition
         $mapOutputFiles = array_fill(0, $reducePartitions, []);
         foreach ($workerResults as $workerFiles) {
             foreach ($workerFiles as $partition => $file) {
@@ -92,37 +111,41 @@ class Mapper
     }
 
     /**
-     * Process items from iterator with persistent file writers per worker
+     * Process a chunk of items in parallel
      *
-     * @param iterable<mixed> $iterator Input iterator to consume from (shared across workers)
-     * @param int $workerIndex Worker index for unique file naming
+     * Static method to enable clean serialization for parallel worker processes.
+     *
+     * @param array<mixed> $chunk Chunk of items to process
+     * @param int $chunkIndex Chunk index for unique file naming
      * @param callable $mapper Mapper function
      * @param int $reducePartitions Number of reduce partitions
-     * @return array<int, string> Partition files created by this worker
+     * @param string $workingDir Working directory
+     * @param int $bufferSize Buffer size for file writes
+     * @param callable|null $partitioner Custom partitioner function
+     * @return array<int, string> Partition files created by this chunk
      */
-    protected function processWorker(
-        iterable $iterator,
-        int $workerIndex,
+    protected static function processChunk(
+        array $chunk,
+        int $chunkIndex,
         callable $mapper,
-        int $reducePartitions
+        int $reducePartitions,
+        string $workingDir,
+        int $bufferSize,
+        ?callable $partitioner = null
     ): array {
         $partitionWriters = [];
         $partitionFiles = [];
-        $writersCreated = false;
 
         try {
-            foreach ($iterator as $value) {
-                // Lazy initialization: only create files if this worker gets items
-                // Empty input = no files created, avoiding unnecessary I/O
-                if (!$writersCreated) {
-                    for ($i = 0; $i < $reducePartitions; $i++) {
-                        $filename = "{$this->workingDir}/map_{$workerIndex}_partition_{$i}.tmp";
-                        $partitionWriters[$i] = new BufferedFileWriter($filename, $this->bufferSize);
-                        $partitionFiles[$i] = $filename;
-                    }
-                    $writersCreated = true;
-                }
+            // Initialize writers for all partitions
+            for ($i = 0; $i < $reducePartitions; $i++) {
+                $filename = "{$workingDir}/map_{$chunkIndex}_partition_{$i}.tmp";
+                $partitionWriters[$i] = new BufferedFileWriter($filename, $bufferSize);
+                $partitionFiles[$i] = $filename;
+            }
 
+            // Process each item in the chunk
+            foreach ($chunk as $value) {
                 $intermediateResults = $mapper($value);
 
                 if ($intermediateResults === null) {
@@ -139,7 +162,7 @@ class Mapper
                     }
 
                     [$intermediateKey, $intermediateValue] = $pair;
-                    $partition = $this->getPartition($intermediateKey, $reducePartitions);
+                    $partition = self::getPartition($intermediateKey, $reducePartitions, $partitioner);
 
                     $partitionWriters[$partition]->writeLine(serialize([
                         'key' => $intermediateKey,
@@ -148,10 +171,12 @@ class Mapper
                 }
             }
 
+            // Close all writers
             foreach ($partitionWriters as $writer) {
                 $writer->close();
             }
         } catch (\Exception $e) {
+            // Ensure cleanup on error
             foreach ($partitionWriters as $writer) {
                 $writer->close();
             }
@@ -161,18 +186,20 @@ class Mapper
         return $partitionFiles;
     }
 
-
     /**
      * Determine partition for a key
      *
+     * Static method to enable use in parallel worker processes.
+     *
      * @param mixed $key Key to partition
      * @param int $numPartitions Number of partitions
+     * @param callable|null $partitioner Custom partitioner function
      * @return int Partition index (0 to numPartitions-1)
      */
-    protected function getPartition($key, int $numPartitions): int
+    protected static function getPartition($key, int $numPartitions, ?callable $partitioner = null): int
     {
-        if ($this->partitioner) {
-            $partition = ($this->partitioner)($key, $numPartitions);
+        if ($partitioner) {
+            $partition = $partitioner($key, $numPartitions);
 
             if (!is_int($partition) || $partition < 0 || $partition >= $numPartitions) {
                 throw new \RuntimeException(
@@ -183,21 +210,24 @@ class Mapper
             return $partition;
         }
 
-        $hash = crc32($this->serializeKey($key));
+        $hash = crc32(self::serializeKey($key));
         return abs($hash) % $numPartitions;
     }
 
     /**
      * Serialize a key for consistent hashing
      *
+     * Static method to enable use in parallel worker processes.
+     *
      * @param mixed $key Key to serialize
      * @return string Serialized key
      */
-    protected function serializeKey($key): string
+    protected static function serializeKey($key): string
     {
         if (is_scalar($key)) {
             return (string)$key;
         }
         return serialize($key);
     }
+
 }

@@ -37,7 +37,8 @@ function formatTime(float $seconds): string
         return round($seconds, 1) . 's';
     }
     $minutes = (int)floor($seconds / 60);
-    $secs = (int)round($seconds % 60);
+    $remainder = $seconds - ($minutes * 60);
+    $secs = (int)round($remainder);
     return "{$minutes}m{$secs}s";
 }
 
@@ -49,10 +50,20 @@ function runBenchmark(int $recordCount, int $concurrency): array
     mkdir($tempDir, 0755, true);
 
     gc_collect_cycles();
-    $memoryBefore = memory_get_peak_usage(true);
+    $memoryBefore = memory_get_usage(true);
     $timeBefore = microtime(true);
 
     try {
+        // Use larger batch sizes for larger datasets to reduce process spawning overhead
+        // Fewer, larger batches = less parent process memory overhead
+        if ($recordCount >= 1000000) {
+            $mapperBatchSize = 5000;
+        } elseif ($recordCount >= 100000) {
+            $mapperBatchSize = 2000;
+        } else {
+            $mapperBatchSize = 500;
+        }
+
         $generator = (new MapReduceBuilder())
             ->input(generateData($recordCount))
             ->map(fn($record) => yield [$record['category'], $record['value']])
@@ -63,6 +74,7 @@ function runBenchmark(int $recordCount, int $concurrency): array
             ])
             ->concurrent($concurrency)
             ->partitions($concurrency)
+            ->mapperBatchSize($mapperBatchSize)
             ->workingDirectory($tempDir)
             ->execute();
 
@@ -75,7 +87,9 @@ function runBenchmark(int $recordCount, int $concurrency): array
         $memoryPeak = memory_get_peak_usage(true);
 
         $elapsedTime = $timeAfter - $timeBefore;
-        $memoryUsed = $memoryPeak - $memoryBefore;
+        // Note: With parallel processing, child processes use separate memory
+        // This shows parent process memory increase only
+        $memoryUsed = max(0, $memoryPeak - $memoryBefore);
 
         return [
             'success' => true,

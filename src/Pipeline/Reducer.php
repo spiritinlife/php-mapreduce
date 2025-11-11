@@ -4,21 +4,35 @@ declare(strict_types=1);
 
 namespace Spiritinlife\MapReduce\Pipeline;
 
+use Spatie\Async\Pool;
 use Spiritinlife\MapReduce\Utils\BufferedFileReader;
-
-use function Amp\async;
-use function Amp\Future\await;
+use Spiritinlife\MapReduce\Utils\BufferedFileWriter;
 
 /**
  * Reducer component for MapReduce pipeline
  *
- * Handles the reduce phase: processes shuffled data and aggregates
- * values for each key using the reducer function.
+ * Handles the reduce phase: processes shuffled data in parallel
+ * and aggregates values for each key using the reducer function.
  *
  * @package Spiritinlife\MapReduce
  */
 class Reducer
 {
+    protected int $concurrency;
+    protected string $workingDir;
+
+    /**
+     * Create a new Reducer instance
+     *
+     * @param int $concurrency Number of concurrent workers
+     * @param string|null $workingDir Directory for temporary files
+     */
+    public function __construct(int $concurrency = 4, ?string $workingDir = null)
+    {
+        $this->concurrency = $concurrency;
+        $this->workingDir = $workingDir ?? sys_get_temp_dir();
+    }
+
     /**
      * Execute the reduce phase
      *
@@ -28,20 +42,48 @@ class Reducer
      */
     public function reduce(array $shuffledFiles, callable $reducer): \Generator
     {
-        $futures = [];
+        $pool = Pool::create()->concurrency($this->concurrency);
 
-        foreach ($shuffledFiles as $filename) {
-            $futures[] = async(function () use ($filename, $reducer) {
-                return $this->processPartition($filename, $reducer);
+        foreach ($shuffledFiles as $index => $filename) {
+            $pool->add(function () use ($index, $filename, $reducer) {
+                return [
+                    'index' => $index,
+                    'resultFile' => $this->processPartition($filename, $reducer, $index)
+                ];
             });
         }
 
-        $results = await($futures);
+        $results = $pool->wait();
 
-        // Yield results from all partitions
-        foreach ($results as $partition) {
-            foreach ($partition as $key => $data) {
-                yield $key => $data;
+        // Sort by index to maintain order
+        usort($results, fn($a, $b) => $a['index'] <=> $b['index']);
+
+        // Read and yield results from result files
+        foreach ($results as $result) {
+            $resultFile = $result['resultFile'];
+
+            if (!file_exists($resultFile)) {
+                continue;
+            }
+
+            $reader = new BufferedFileReader($resultFile);
+
+            try {
+                while (($line = $reader->getLine()) !== null) {
+                    if (empty($line)) {
+                        continue;
+                    }
+
+                    $data = unserialize($line);
+                    yield $data['serialized_key'] => $data;
+                }
+
+                $reader->close();
+            } catch (\Exception $e) {
+                $reader->close();
+                throw $e;
+            } finally {
+                @unlink($resultFile);
             }
         }
     }
@@ -51,47 +93,59 @@ class Reducer
      *
      * @param string $filename Shuffled file to process
      * @param callable $reducer Reducer function
-     * @return array<string, array{key: mixed, value: mixed}> Results for this partition
+     * @param int $index Partition index for unique file naming
+     * @return string Path to result file
      */
-    protected function processPartition(string $filename, callable $reducer): array
+    protected function processPartition(string $filename, callable $reducer, int $index): string
     {
-        $results = [];
+        $resultFile = "{$this->workingDir}/reduce_result_{$index}.tmp";
 
         if (!file_exists($filename)) {
-            return $results;
+            touch($resultFile);
+            return $resultFile;
         }
 
-        // Use buffered reading for memory-safe processing
-        $reader = new BufferedFileReader($filename);
+        $writer = new BufferedFileWriter($resultFile);
 
         try {
-            while (($line = $reader->getLine()) !== null) {
-                // Skip empty lines
-                if (empty($line)) {
-                    continue;
+            // Use buffered reading for memory-safe processing
+            $reader = new BufferedFileReader($filename);
+
+            try {
+                while (($line = $reader->getLine()) !== null) {
+                    // Skip empty lines
+                    if (empty($line)) {
+                        continue;
+                    }
+
+                    $group = unserialize($line);
+                    $key = $group['key'];
+                    $values = $group['values'];
+
+                    // Call reducer function
+                    $result = $reducer($key, $values);
+
+                    // Write result to file
+                    $writer->writeLine(serialize([
+                        'key' => $key,
+                        'value' => $result,
+                        'serialized_key' => $this->serializeKey($key)
+                    ]) . "\n");
                 }
 
-                $group = unserialize($line);
-                $key = $group['key'];
-                $values = $group['values'];
-
-                // Call reducer function
-                $result = $reducer($key, $values);
-
-                // Store result
-                $results[$this->serializeKey($key)] = [
-                    'key' => $key,
-                    'value' => $result
-                ];
+                $reader->close();
+                $writer->close();
+            } catch (\Exception $e) {
+                $reader->close();
+                $writer->close();
+                throw $e;
             }
-
-            $reader->close();
         } catch (\Exception $e) {
-            $reader->close();
+            $writer->close();
             throw $e;
         }
 
-        return $results;
+        return $resultFile;
     }
 
     /**
